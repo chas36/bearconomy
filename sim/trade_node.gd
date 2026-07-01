@@ -5,10 +5,10 @@ const Goods := preload("res://sim/goods.gd")
 const Labor := preload("res://sim/labor.gd")
 
 var name: String
-var stock := {}          # Good -> float
-var target_stock := {}   # Good -> float (для формулы цены)
-var consumption := {}    # Good -> float за тик (спрос населения)
-var labor_pool := {}     # Labor.Type -> int (доступно в узле)
+var stock := {}  # Good -> float
+var target_stock := {}  # Good -> float (для формулы цены)
+var consumption := {}  # Good -> float за тик (спрос населения)
+var labor_pool := {}  # Labor.Type -> int (доступно в узле)
 
 
 func _init(n: String) -> void:

@@ -14,19 +14,23 @@ var economy := Economy.new()
 
 
 func setup() -> void:
-	var nevyansk := TradeNode.new("Невьянск")     # уральский завод
-	var makarievo := TradeNode.new("Макарьево")   # ярмарка
-	var moskva := TradeNode.new("Москва")         # столица-потребитель
+	var nevyansk := TradeNode.new("Невьянск")  # уральский завод
+	var makarievo := TradeNode.new("Макарьево")  # ярмарка
+	var moskva := TradeNode.new("Москва")  # столица-потребитель
 
 	# стартовые запасы и спрос
 	nevyansk.stock[Goods.Good.ZERNO] = 30.0
-	nevyansk.labor_pool = { Labor.Type.HIRED: 5, Labor.Type.ASCRIBED: 40, Labor.Type.POSSESSIONAL: 20 }
+	nevyansk.labor_pool = {
+		Labor.Type.HIRED: 5, Labor.Type.ASCRIBED: 40, Labor.Type.POSSESSIONAL: 20
+	}
 	makarievo.stock[Goods.Good.ZERNO] = 80.0
-	makarievo.labor_pool = { Labor.Type.HIRED: 30, Labor.Type.ASCRIBED: 0, Labor.Type.POSSESSIONAL: 0 }
+	makarievo.labor_pool = {
+		Labor.Type.HIRED: 30, Labor.Type.ASCRIBED: 0, Labor.Type.POSSESSIONAL: 0
+	}
 	moskva.consumption[Goods.Good.ZHELEZO] = 2.0  # Москва ест железо -> тянет цену вверх
 	moskva.consumption[Goods.Good.ZERNO] = 5.0
 	moskva.stock[Goods.Good.ZERNO] = 100.0
-	moskva.labor_pool = { Labor.Type.HIRED: 60, Labor.Type.ASCRIBED: 0, Labor.Type.POSSESSIONAL: 0 }
+	moskva.labor_pool = {Labor.Type.HIRED: 60, Labor.Type.ASCRIBED: 0, Labor.Type.POSSESSIONAL: 0}
 
 	economy.nodes = [nevyansk, makarievo, moskva]
 
@@ -43,7 +47,8 @@ func setup() -> void:
 			e.workers[l] += take
 			e.node.labor_pool[l] -= take
 			need -= take
-			if need <= 0: break
+			if need <= 0:
+				break
 
 
 func report() -> void:

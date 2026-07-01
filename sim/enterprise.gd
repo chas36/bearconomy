@@ -8,8 +8,8 @@ const TradeNode := preload("res://sim/trade_node.gd")
 var name: String
 var node: TradeNode
 var recipe: String
-var capacity: float           # ед. мощности
-var workers := {}             # Labor.Type -> int (нанято/приписано)
+var capacity: float  # ед. мощности
+var workers := {}  # Labor.Type -> int (нанято/приписано)
 
 
 func _init(n: String, nd: TradeNode, r: String, cap: float) -> void:

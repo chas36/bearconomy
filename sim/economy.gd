@@ -61,5 +61,9 @@ func sell(n: TradeNode, g: int, qty: float) -> void:
 	var p := n.price(g)
 	n.stock[g] += qty
 	player.money += p * qty
-	print("  [СДЕЛКА] Продано %.1f %s в %s по %.2f (итого %.1f)" %
-		[qty, Goods.NAMES[g], n.name, p, p * qty])
+	print(
+		(
+			"  [СДЕЛКА] Продано %.1f %s в %s по %.2f (итого %.1f)"
+			% [qty, Goods.NAMES[g], n.name, p, p * qty]
+		)
+	)
