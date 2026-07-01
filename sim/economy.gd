@@ -51,8 +51,27 @@ func tick() -> void:
 		for g in n.consumption:
 			n.stock[g] = max(0.0, n.stock[g] - n.consumption[g])
 
-	# 3. ЦЕНЫ пересчитываются лениво через node.price(g) — отдельного шага не нужно.
-	#    Сюда позже встанет сглаживание (цена двигается к целевой на N% за тик).
+	# 3. СГЛАЖИВАНИЕ ЦЕН: цена движется к целевой (см. TradeNode.PRICE_SMOOTHING)
+	for n in nodes:
+		n.smooth_prices()
+
+
+# Действие игрока: купить товар в узле; вернёт, сколько реально куплено
+func buy(n: TradeNode, g: int, qty: float) -> float:
+	var p := n.price(g)
+	qty = min(qty, n.stock[g])
+	if p > 0.0:
+		qty = min(qty, player.money / p)
+	n.stock[g] -= qty
+	player.money -= p * qty
+	if qty > 0.05:
+		print(
+			(
+				"  [СДЕЛКА] Куплено %.1f %s в %s по %.2f (итого %.1f)"
+				% [qty, Goods.NAMES[g], n.name, p, p * qty]
+			)
+		)
+	return qty
 
 
 # Действие игрока: продать товар в узле
