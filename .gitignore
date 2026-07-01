@@ -1,3 +1,15 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+
+# Учётные данные экспорта
+export_credentials.cfg
+
+# Автогенерируемые переводы (из CSV)
+*.translation
+
+# macOS
+.DS_Store
+
+# Локальные настройки Claude Code
+.claude/settings.local.json
