@@ -356,7 +356,10 @@ func _refresh_caravans() -> void:
 
 func _clear_children(node: Node) -> void:
 	for child in node.get_children():
-		child.free()
+		if child is CanvasItem:
+			child.visible = false
+		if not child.is_queued_for_deletion():
+			child.queue_free()
 
 
 func _add_grid_label(grid: GridContainer, text: String) -> void:
