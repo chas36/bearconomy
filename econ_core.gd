@@ -6,17 +6,18 @@ extends SceneTree
 
 const Goods := preload("res://sim/goods.gd")
 const Labor := preload("res://sim/labor.gd")
-const TradeNode := preload("res://sim/trade_node.gd")
 const Enterprise := preload("res://sim/enterprise.gd")
-const Economy := preload("res://sim/economy.gd")
-const DemoScenario := preload("res://sim/demo_scenario.gd")
+const Gameplay := preload("res://sim/gameplay.gd")
 
-var economy := Economy.new()
+var gameplay := Gameplay.new()
+var economy
 var scenario := {}
 
 
 func setup() -> void:
-	scenario = DemoScenario.setup(economy)
+	gameplay.setup()
+	economy = gameplay.economy
+	scenario = gameplay.scenario
 
 
 func report() -> void:
@@ -26,6 +27,7 @@ func report() -> void:
 			% [economy.tick_count, economy.player.money, economy.player.state_relations]
 		)
 	)
+	print("  Контракт: %s" % gameplay.contract_status_text())
 	for n in economy.nodes:
 		var s := "  %s:" % n.name
 		for g in Goods.Good.values():
@@ -57,16 +59,15 @@ func report() -> void:
 func _init() -> void:
 	setup()
 	print(">>> Демидовский прототип: руда -> чугун -> железо, 3 типа труда <<<")
-	var nevyansk: TradeNode = scenario["nevyansk"]
-	var makarievo: TradeNode = scenario["makarievo"]
-	var moskva: TradeNode = scenario["moskva"]
 	var kuznitsa: Enterprise = scenario["kuznitsa"]
 	for i in range(16):
-		economy.tick()
+		gameplay.advance_tick()
 		if economy.tick_count == 10:
 			economy.set_hired_wage_offer(kuznitsa, 1.2)
 		if economy.tick_count == 12:
 			economy.set_hired_wage_offer(kuznitsa, 1.8)
-		DemoScenario.run_logistics(economy, nevyansk, makarievo, moskva)
+		if gameplay.has_pending_event():
+			print("  [СОБЫТИЕ] %s — выбран первый вариант" % gameplay.pending_event_title())
+			gameplay.choose_event(0)
 		report()
 	quit()

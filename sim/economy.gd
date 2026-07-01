@@ -19,6 +19,7 @@ var nodes: Array[TradeNode] = []
 var caravans: Array[Caravan] = []
 var player := Player.new()
 var tick_count := 0
+var sold_total := {}  # TradeNode -> Good -> float
 
 
 func tick() -> void:
@@ -169,6 +170,7 @@ func sell(n: TradeNode, g: int, qty: float) -> void:
 	var p := n.price(g)
 	n.stock[g] += qty
 	player.money += p * qty
+	_record_sale(n, g, qty)
 	print(
 		(
 			"  [СДЕЛКА] Продано %.1f %s в %s по %.2f (итого %.1f)"
@@ -198,6 +200,7 @@ func _arrive_caravan(c: Caravan) -> void:
 	if c.sell_on_arrival:
 		var p := c.destination.price(c.good)
 		player.money += p * c.qty
+		_record_sale(c.destination, c.good, c.qty)
 		print(
 			(
 				"  [КАРАВАН] Прибыло и продано %.1f %s в %s по %.2f (итого %.1f)"
@@ -277,3 +280,146 @@ func _best_open_hired_wage(n: TradeNode) -> float:
 		if e.node == n and e.open_worker_slots() > 0:
 			best = max(best, e.hired_wage_offer)
 	return best
+
+
+func sold_amount(n: TradeNode, g: int) -> float:
+	if not sold_total.has(n):
+		return 0.0
+	return sold_total[n].get(g, 0.0)
+
+
+func _record_sale(n: TradeNode, g: int, qty: float) -> void:
+	if not sold_total.has(n):
+		sold_total[n] = {}
+	sold_total[n][g] = sold_total[n].get(g, 0.0) + qty
+
+
+func to_save_data() -> Dictionary:
+	var node_data: Array[Dictionary] = []
+	for n in nodes:
+		(
+			node_data
+			. append(
+				{
+					"name": n.name,
+					"stock": _number_dict_to_save(n.stock),
+					"target_stock": _number_dict_to_save(n.target_stock),
+					"consumption": _number_dict_to_save(n.consumption),
+					"labor_pool": _number_dict_to_save(n.labor_pool),
+					"prices": _number_dict_to_save(n.prices),
+				}
+			)
+		)
+
+	var enterprise_data: Array[Dictionary] = []
+	for e in player.enterprises:
+		(
+			enterprise_data
+			. append(
+				{
+					"name": e.name,
+					"node": nodes.find(e.node),
+					"recipe": e.recipe,
+					"capacity": e.capacity,
+					"hired_wage_offer": e.hired_wage_offer,
+					"workers": _number_dict_to_save(e.workers),
+				}
+			)
+		)
+
+	var caravan_data: Array[Dictionary] = []
+	for c in caravans:
+		(
+			caravan_data
+			. append(
+				{
+					"origin": nodes.find(c.origin),
+					"destination": nodes.find(c.destination),
+					"good": c.good,
+					"qty": c.qty,
+					"remaining_ticks": c.remaining_ticks,
+					"total_ticks": c.total_ticks,
+					"sell_on_arrival": c.sell_on_arrival,
+				}
+			)
+		)
+
+	var sales_data: Array[Dictionary] = []
+	for n in sold_total:
+		sales_data.append({"node": nodes.find(n), "goods": _number_dict_to_save(sold_total[n])})
+
+	return {
+		"tick_count": tick_count,
+		"player":
+		{
+			"money": player.money,
+			"state_relations": player.state_relations,
+		},
+		"nodes": node_data,
+		"enterprises": enterprise_data,
+		"caravans": caravan_data,
+		"sold_total": sales_data,
+	}
+
+
+func load_save_data(data: Dictionary) -> void:
+	tick_count = data.get("tick_count", 0)
+	var player_data: Dictionary = data.get("player", {})
+	player.money = player_data.get("money", 500.0)
+	player.state_relations = player_data.get("state_relations", 50.0)
+	player.enterprises.clear()
+
+	nodes.clear()
+	for n_data in data.get("nodes", []):
+		var node := TradeNode.new(n_data.get("name", "Узел"))
+		_load_number_dict(node.stock, n_data.get("stock", {}), Goods.Good.values())
+		_load_number_dict(node.target_stock, n_data.get("target_stock", {}), Goods.Good.values())
+		_load_number_dict(node.consumption, n_data.get("consumption", {}), Goods.Good.values())
+		_load_number_dict(node.labor_pool, n_data.get("labor_pool", {}), Labor.Type.values())
+		_load_number_dict(node.prices, n_data.get("prices", {}), Goods.Good.values())
+		nodes.append(node)
+
+	for e_data in data.get("enterprises", []):
+		var node_index: int = e_data.get("node", 0)
+		var e := Enterprise.new(
+			e_data.get("name", "Предприятие"),
+			nodes[node_index],
+			e_data.get("recipe", "rudnik"),
+			e_data.get("capacity", 1.0)
+		)
+		e.hired_wage_offer = e_data.get("hired_wage_offer", Labor.WAGE[Labor.Type.HIRED])
+		_load_number_dict(e.workers, e_data.get("workers", {}), Labor.Type.values())
+		player.enterprises.append(e)
+
+	caravans.clear()
+	for c_data in data.get("caravans", []):
+		var c := Caravan.new(
+			nodes[c_data.get("origin", 0)],
+			nodes[c_data.get("destination", 0)],
+			c_data.get("good", Goods.Good.ZERNO),
+			c_data.get("qty", 0.0),
+			c_data.get("total_ticks", 1),
+			c_data.get("sell_on_arrival", false)
+		)
+		c.remaining_ticks = c_data.get("remaining_ticks", c.total_ticks)
+		caravans.append(c)
+
+	sold_total.clear()
+	for s_data in data.get("sold_total", []):
+		var node: TradeNode = nodes[s_data.get("node", 0)]
+		sold_total[node] = {}
+		_load_number_dict(sold_total[node], s_data.get("goods", {}), Goods.Good.values())
+
+
+func _number_dict_to_save(source: Dictionary) -> Dictionary:
+	var result := {}
+	for k in source:
+		result[str(k)] = source[k]
+	return result
+
+
+func _load_number_dict(target: Dictionary, source: Dictionary, keys: Array) -> void:
+	for k in keys:
+		var key := str(k)
+		if source.has(key):
+			target[k] = source[key]

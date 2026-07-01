@@ -5,10 +5,10 @@ const Goods := preload("res://sim/goods.gd")
 const Labor := preload("res://sim/labor.gd")
 const TradeNode := preload("res://sim/trade_node.gd")
 const Enterprise := preload("res://sim/enterprise.gd")
-const Economy := preload("res://sim/economy.gd")
-const DemoScenario := preload("res://sim/demo_scenario.gd")
+const Gameplay := preload("res://sim/gameplay.gd")
 
-var economy := Economy.new()
+var gameplay := Gameplay.new()
+var economy
 var scenario := {}
 var goods: Array = Goods.Good.values()
 
@@ -26,6 +26,10 @@ var good_select: OptionButton
 var qty_spin: SpinBox
 var speed_select: OptionButton
 var play_button: Button
+var contract_label: Label
+var event_title_label: Label
+var event_body_label: Label
+var event_choice_box: VBoxContainer
 var node_grid: GridContainer
 var enterprise_grid: GridContainer
 var caravan_box: VBoxContainer
@@ -35,7 +39,8 @@ var log_lines: Array[String] = []
 
 
 func _ready() -> void:
-	scenario = DemoScenario.setup(economy)
+	gameplay.setup()
+	_sync_from_gameplay()
 	_build_ui()
 	_refresh_all()
 
@@ -94,6 +99,20 @@ func _build_ui() -> void:
 	speed_select.selected = 0
 	speed_select.item_selected.connect(_on_speed_selected)
 	controls.add_child(speed_select)
+
+	var save_button := Button.new()
+	save_button.text = "Сохранить"
+	save_button.pressed.connect(_on_save_pressed)
+	controls.add_child(save_button)
+
+	var load_button := Button.new()
+	load_button.text = "Загрузить"
+	load_button.pressed.connect(_on_load_pressed)
+	controls.add_child(load_button)
+
+	contract_label = Label.new()
+	contract_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	page.add_child(contract_label)
 
 	var columns := HBoxContainer.new()
 	columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -195,6 +214,20 @@ func _build_ui() -> void:
 	var right := _add_panel(columns, "Ход")
 	right.custom_minimum_size.x = 280
 
+	event_title_label = Label.new()
+	right.add_child(event_title_label)
+
+	event_body_label = Label.new()
+	event_body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	right.add_child(event_body_label)
+
+	event_choice_box = VBoxContainer.new()
+	event_choice_box.add_theme_constant_override("separation", 6)
+	right.add_child(event_choice_box)
+
+	var event_separator := HSeparator.new()
+	right.add_child(event_separator)
+
 	caravan_box = VBoxContainer.new()
 	right.add_child(caravan_box)
 
@@ -234,10 +267,35 @@ func _refresh_all() -> void:
 	money_label.text = (
 		"Деньги %.1f | Казна %.1f" % [economy.player.money, economy.player.state_relations]
 	)
+	contract_label.text = gameplay.contract_status_text()
 	_refresh_node_panel()
 	_refresh_enterprise_panel()
+	_refresh_event_panel()
 	_refresh_caravans()
-	log_label.text = "\n".join(log_lines)
+	log_label.text = _joined_log_text()
+
+
+func _sync_from_gameplay() -> void:
+	economy = gameplay.economy
+	scenario = gameplay.scenario
+
+
+func _refresh_event_panel() -> void:
+	_clear_children(event_choice_box)
+	if not gameplay.has_pending_event():
+		event_title_label.text = "Событий нет"
+		event_body_label.text = ""
+		return
+
+	event_title_label.text = gameplay.pending_event_title()
+	event_body_label.text = gameplay.pending_event_body()
+	var choices := gameplay.pending_event_choices()
+	for i in range(choices.size()):
+		var choice: Dictionary = choices[i]
+		var button := Button.new()
+		button.text = choice["text"]
+		button.pressed.connect(_on_event_choice_pressed.bind(i))
+		event_choice_box.add_child(button)
 
 
 func _refresh_node_panel() -> void:
@@ -320,11 +378,16 @@ func _selected_good() -> int:
 
 
 func _advance_tick() -> void:
-	economy.tick()
-	DemoScenario.run_logistics(
-		economy, scenario["nevyansk"], scenario["makarievo"], scenario["moskva"]
-	)
+	if gameplay.has_pending_event():
+		_add_log("Сначала выберите решение события.")
+		_refresh_all()
+		return
+	gameplay.advance_tick()
 	_add_log("Тик %d" % economy.tick_count)
+	if gameplay.has_pending_event():
+		is_running = false
+		play_button.text = "Пуск"
+		tick_timer.stop()
 	_refresh_all()
 
 
@@ -332,6 +395,17 @@ func _add_log(text: String) -> void:
 	log_lines.push_front(text)
 	if log_lines.size() > 8:
 		log_lines.resize(8)
+
+
+func _joined_log_text() -> String:
+	var lines: Array[String] = []
+	for notice in gameplay.notices:
+		lines.append(notice)
+	for line in log_lines:
+		lines.append(line)
+	if lines.size() > 10:
+		lines.resize(10)
+	return "\n".join(lines)
 
 
 func _on_step_pressed() -> void:
@@ -393,7 +467,7 @@ func _on_send_grain_pressed() -> void:
 	var makarievo: TradeNode = scenario["makarievo"]
 	var nevyansk: TradeNode = scenario["nevyansk"]
 	var qty: float = economy.buy_and_dispatch(
-		makarievo, nevyansk, Goods.Good.ZERNO, float(qty_spin.value), DemoScenario.GRAIN_ROUTE_TICKS
+		makarievo, nevyansk, Goods.Good.ZERNO, float(qty_spin.value), Gameplay.GRAIN_ROUTE_TICKS
 	)
 	_add_log("Зерно в Невьянск: %.1f" % qty)
 	_refresh_all()
@@ -407,7 +481,7 @@ func _on_send_iron_pressed() -> void:
 		moskva,
 		Goods.Good.ZHELEZO,
 		nevyansk.stock[Goods.Good.ZHELEZO],
-		DemoScenario.IRON_ROUTE_TICKS,
+		Gameplay.IRON_ROUTE_TICKS,
 		true
 	)
 	_add_log("Железо в Москву: %.1f" % qty)
@@ -423,6 +497,32 @@ func _on_wage_changed(value: float) -> void:
 
 func _on_ascribed_pressed() -> void:
 	var e := _selected_enterprise()
-	var granted := economy.request_ascribed_workers(e, 1)
+	var granted: int = economy.request_ascribed_workers(e, 1)
 	_add_log("%s: приписных +%d" % [e.name, granted])
+	_refresh_all()
+
+
+func _on_event_choice_pressed(choice_index: int) -> void:
+	gameplay.choose_event(choice_index)
+	_refresh_all()
+
+
+func _on_save_pressed() -> void:
+	if gameplay.save_to_file():
+		_add_log("Сохранено.")
+	else:
+		_add_log("Сохранение не удалось.")
+	_refresh_all()
+
+
+func _on_load_pressed() -> void:
+	if gameplay.load_from_file():
+		_sync_from_gameplay()
+		selected_node_index = min(selected_node_index, economy.nodes.size() - 1)
+		selected_enterprise_index = min(
+			selected_enterprise_index, economy.player.enterprises.size() - 1
+		)
+		_add_log("Загружено.")
+	else:
+		_add_log("Загрузка не удалась.")
 	_refresh_all()
