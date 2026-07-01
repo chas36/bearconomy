@@ -9,85 +9,64 @@ const Labor := preload("res://sim/labor.gd")
 const TradeNode := preload("res://sim/trade_node.gd")
 const Enterprise := preload("res://sim/enterprise.gd")
 const Economy := preload("res://sim/economy.gd")
-
-# Держим на заводе запас зерна ~2 тика содержания рабочих
-const GRAIN_TOPUP := 14.0
+const DemoScenario := preload("res://sim/demo_scenario.gd")
 
 var economy := Economy.new()
+var scenario := {}
 
 
 func setup() -> void:
-	var nevyansk := TradeNode.new("Невьянск")  # уральский завод
-	var makarievo := TradeNode.new("Макарьево")  # ярмарка
-	var moskva := TradeNode.new("Москва")  # столица-потребитель
-
-	# стартовые запасы и спрос
-	nevyansk.stock[Goods.Good.ZERNO] = 30.0
-	nevyansk.target_stock[Goods.Good.ZERNO] = 15.0  # ~2 тика содержания рабочих
-	nevyansk.target_stock[Goods.Good.CHUGUN] = 3.0  # промежуточный товар не залёживается
-	nevyansk.target_stock[Goods.Good.ZHELEZO] = 5.0  # копится только до отправки
-	nevyansk.labor_pool = {
-		Labor.Type.HIRED: 5, Labor.Type.ASCRIBED: 40, Labor.Type.POSSESSIONAL: 20
-	}
-	makarievo.stock[Goods.Good.ZERNO] = 150.0  # v0-заглушка: житница без своего производства
-	makarievo.target_stock[Goods.Good.ZERNO] = 60.0
-	makarievo.labor_pool = {
-		Labor.Type.HIRED: 30, Labor.Type.ASCRIBED: 0, Labor.Type.POSSESSIONAL: 0
-	}
-	moskva.consumption[Goods.Good.ZHELEZO] = 1.2  # Москва ест железо -> тянет цену вверх
-	moskva.consumption[Goods.Good.ZERNO] = 5.0
-	moskva.stock[Goods.Good.ZERNO] = 100.0
-	moskva.target_stock[Goods.Good.ZERNO] = 40.0
-	moskva.target_stock[Goods.Good.ZHELEZO] = 8.0
-	moskva.labor_pool = {Labor.Type.HIRED: 60, Labor.Type.ASCRIBED: 0, Labor.Type.POSSESSIONAL: 0}
-
-	economy.nodes = [nevyansk, makarievo, moskva]
-
-	# стартовое предприятие игрока: рудник + домна + кузница в Невьянске
-	for cfg in [["Рудник", "rudnik", 3.0], ["Домна", "domna", 2.0], ["Кузница", "kuznitsa", 2.0]]:
-		var e := Enterprise.new(cfg[0], nevyansk, cfg[1], cfg[2])
-		economy.player.enterprises.append(e)
-
-	# грубое распределение труда: сначала дешёвые крепостные, потом наёмные
-	for e in economy.player.enterprises:
-		var need := int(ceil(e.labor_needed()))
-		for l in [Labor.Type.POSSESSIONAL, Labor.Type.ASCRIBED, Labor.Type.HIRED]:
-			var take: int = min(need, e.node.labor_pool[l])
-			e.workers[l] += take
-			e.node.labor_pool[l] -= take
-			need -= take
-			if need <= 0:
-				break
+	scenario = DemoScenario.setup(economy)
 
 
 func report() -> void:
-	print("\n===== ТИК %d | Казна игрока: %.1f =====" % [economy.tick_count, economy.player.money])
+	print(
+		(
+			"\n===== ТИК %d | Казна игрока: %.1f | Связи с казной: %.1f ====="
+			% [economy.tick_count, economy.player.money, economy.player.state_relations]
+		)
+	)
 	for n in economy.nodes:
 		var s := "  %s:" % n.name
 		for g in Goods.Good.values():
 			if n.stock[g] > 0.05 or n.consumption[g] > 0.0:
 				s += "  %s=%.1f (цена %.2f)" % [Goods.NAMES[g], n.stock[g], n.price(g)]
+		s += "  | свободные наёмные=%d" % n.labor_pool[Labor.Type.HIRED]
 		print(s)
+	var labor_status := "  Штат:"
+	for e in economy.player.enterprises:
+		labor_status += " %s=%d/%d" % [e.name, e.worker_count(), int(ceil(e.labor_needed()))]
+	print(labor_status)
+	if not economy.caravans.is_empty():
+		print("  Караваны в пути:")
+		for c in economy.caravans:
+			print(
+				(
+					"    %s -> %s: %.1f %s, осталось %d т."
+					% [
+						c.origin.name,
+						c.destination.name,
+						c.qty,
+						Goods.NAMES[c.good],
+						c.remaining_ticks
+					]
+				)
+			)
 
 
 func _init() -> void:
 	setup()
 	print(">>> Демидовский прототип: руда -> чугун -> железо, 3 типа труда <<<")
-	var nevyansk: TradeNode = economy.nodes[0]
-	var makarievo: TradeNode = economy.nodes[1]
-	var moskva: TradeNode = economy.nodes[2]
+	var nevyansk: TradeNode = scenario["nevyansk"]
+	var makarievo: TradeNode = scenario["makarievo"]
+	var moskva: TradeNode = scenario["moskva"]
+	var kuznitsa: Enterprise = scenario["kuznitsa"]
 	for i in range(16):
 		economy.tick()
-		# псевдо-логистика зерна: докупаем на ярмарке и «телепортируем» на завод
-		var grain_gap: float = GRAIN_TOPUP - nevyansk.stock[Goods.Good.ZERNO]
-		if grain_gap > 0.5:
-			var bought: float = economy.buy(makarievo, Goods.Good.ZERNO, grain_gap)
-			nevyansk.stock[Goods.Good.ZERNO] += bought
-		# каждые 4 тика везём железо «в Москву» и продаём (телепорт вместо логистики — пока)
-		if economy.tick_count % 4 == 0:
-			var qty: float = nevyansk.stock[Goods.Good.ZHELEZO]
-			if qty > 0.5:
-				nevyansk.stock[Goods.Good.ZHELEZO] = 0.0
-				economy.sell(moskva, Goods.Good.ZHELEZO, qty)
+		if economy.tick_count == 10:
+			economy.set_hired_wage_offer(kuznitsa, 1.2)
+		if economy.tick_count == 12:
+			economy.set_hired_wage_offer(kuznitsa, 1.8)
+		DemoScenario.run_logistics(economy, nevyansk, makarievo, moskva)
 		report()
 	quit()
