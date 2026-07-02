@@ -9,7 +9,7 @@ const Enterprise := preload("res://sim/enterprise.gd")
 const Gameplay := preload("res://sim/gameplay.gd")
 const OpenRouterNpc := preload("res://game/openrouter_npc.gd")
 
-const BUILD_RECIPE_IDS := ["rudnik", "domna", "kuznitsa"]
+const BUILD_RECIPE_IDS := ["rudnik", "domna", "kuznitsa", "melnitsa", "vinokurnya"]
 
 var gameplay := Gameplay.new()
 var economy

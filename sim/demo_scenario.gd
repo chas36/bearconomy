@@ -22,17 +22,24 @@ static func setup(economy) -> Dictionary:
 	nevyansk.target_stock[Goods.Good.ZHELEZO] = 5.0
 	nevyansk.labor_pool = {Labor.Type.HIRED: 2, Labor.Type.ASCRIBED: 0, Labor.Type.POSSESSIONAL: 8}
 
-	makarievo.stock[Goods.Good.ZERNO] = 150.0  # v0-заглушка: житница без своего производства
-	makarievo.target_stock[Goods.Good.ZERNO] = 60.0
+	makarievo.stock[Goods.Good.ZERNO] = 340.0  # v0-заглушка: житница без своего производства
+	makarievo.target_stock[Goods.Good.ZERNO] = 100.0
+	makarievo.target_stock[Goods.Good.MUKA] = 8.0
 	makarievo.labor_pool = {
 		Labor.Type.HIRED: 30, Labor.Type.ASCRIBED: 0, Labor.Type.POSSESSIONAL: 0
 	}
 
 	moskva.consumption[Goods.Good.ZHELEZO] = 1.2
 	moskva.consumption[Goods.Good.ZERNO] = 5.0
+	moskva.consumption[Goods.Good.MUKA] = 1.5
+	moskva.consumption[Goods.Good.VODKA] = 0.8
 	moskva.stock[Goods.Good.ZERNO] = 100.0
+	moskva.stock[Goods.Good.MUKA] = 8.0
+	moskva.stock[Goods.Good.VODKA] = 4.0
 	moskva.target_stock[Goods.Good.ZERNO] = 40.0
 	moskva.target_stock[Goods.Good.ZHELEZO] = 8.0
+	moskva.target_stock[Goods.Good.MUKA] = 12.0
+	moskva.target_stock[Goods.Good.VODKA] = 6.0
 	moskva.labor_pool = {Labor.Type.HIRED: 60, Labor.Type.ASCRIBED: 0, Labor.Type.POSSESSIONAL: 0}
 
 	var nodes: Array[TradeNode] = [nevyansk, makarievo, moskva]

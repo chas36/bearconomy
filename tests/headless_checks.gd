@@ -11,6 +11,7 @@ var failed := false
 
 func _init() -> void:
 	_check_prices_inside_clamps()
+	_check_m3_chain_prices_inside_clamps()
 	_check_save_load_determinism()
 	_check_v1_save_migration()
 	_check_construction_roundtrip()
@@ -27,6 +28,42 @@ func _check_prices_inside_clamps() -> void:
 	game.setup()
 	_advance_with_default_choices(game, 16)
 
+	_expect_prices_inside_clamps(game, "baseline")
+
+
+func _check_m3_chain_prices_inside_clamps() -> void:
+	var game := Gameplay.new()
+	game.setup()
+	var player = game.economy.player
+	var makarievo: TradeNode = game.scenario["makarievo"]
+	var moskva: TradeNode = game.scenario["moskva"]
+
+	for _i in range(30):
+		game.advance_tick()
+		if game.economy.tick_count == 1:
+			_expect(
+				game.economy.start_construction(player, makarievo, "melnitsa", 2.0, 0),
+				"M3 mill construction did not start"
+			)
+		if game.economy.tick_count == 6:
+			_expect(
+				game.economy.start_construction(player, makarievo, "vinokurnya", 1.0, 0),
+				"M3 distillery construction did not start"
+			)
+		if game.economy.tick_count % 2 == 0:
+			_dispatch_surplus(game, makarievo, moskva, Goods.Good.MUKA, 8.0, 2.0)
+			_dispatch_surplus(game, makarievo, moskva, Goods.Good.VODKA, 2.0, 2.0)
+		if game.has_pending_event():
+			game.choose_event(0)
+
+	_expect_prices_inside_clamps(game, "M3")
+	_expect(
+		makarievo.stock[Goods.Good.ZERNO] > 5.0,
+		"M3 grain in Makarievo exhausted: %.1f" % makarievo.stock[Goods.Good.ZERNO]
+	)
+
+
+func _expect_prices_inside_clamps(game: Gameplay, label: String) -> void:
 	for n in game.economy.nodes:
 		for g in Goods.Good.values():
 			var price: float = n.price(g)
@@ -35,10 +72,24 @@ func _check_prices_inside_clamps() -> void:
 			_expect(
 				price > low and price < high,
 				(
-					"price clamp: %s/%s = %.3f outside (%.3f, %.3f)"
-					% [n.name, Goods.NAMES[g], price, low, high]
+					"%s price clamp: %s/%s = %.3f outside (%.3f, %.3f)"
+					% [label, n.name, Goods.NAMES[g], price, low, high]
 				)
 			)
+
+
+func _dispatch_surplus(
+	game: Gameplay,
+	origin: TradeNode,
+	destination: TradeNode,
+	good: int,
+	reserve: float,
+	max_qty: float
+) -> void:
+	var qty: float = min(max_qty, max(0.0, origin.stock[good] - reserve))
+	if qty <= 0.05:
+		return
+	game.economy.dispatch(game.economy.player, origin, destination, good, qty, 2, true)
 
 
 func _check_save_load_determinism() -> void:

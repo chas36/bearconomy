@@ -1,6 +1,7 @@
 # econ_core.gd — headless-точка входа: демо-сценарий поверх ядра из /sim
 # Запуск без редактора: godot --headless --script econ_core.gd
-# Цепочка: руда -> чугун -> железо. Три типа труда. Локальные цены по узлам.
+# Цепочки: руда -> чугун -> железо; зерно -> мука -> водка.
+# Три типа труда. Локальные цены по узлам.
 
 extends SceneTree
 
@@ -18,6 +19,15 @@ func setup() -> void:
 	gameplay.setup()
 	economy = gameplay.economy
 	scenario = gameplay.scenario
+
+
+func dispatch_surplus_to_moscow(good: int, reserve: float, max_qty: float) -> void:
+	var makarievo = scenario["makarievo"]
+	var moskva = scenario["moskva"]
+	var qty: float = min(max_qty, max(0.0, makarievo.stock[good] - reserve))
+	if qty <= 0.05:
+		return
+	economy.dispatch(economy.player, makarievo, moskva, good, qty, 2, true)
 
 
 func report() -> void:
@@ -75,12 +85,19 @@ func report() -> void:
 
 func _init() -> void:
 	setup()
-	print(">>> Демидовский прототип: руда -> чугун -> железо, 3 типа труда <<<")
+	print(">>> Демидовский прототип: железо и новая цепочка зерно -> мука -> водка <<<")
 	var kuznitsa: Enterprise = scenario["kuznitsa"]
-	for i in range(20):
+	for i in range(30):
 		gameplay.advance_tick()
+		if economy.tick_count == 1:
+			economy.start_construction(economy.player, scenario["makarievo"], "melnitsa", 2.0, 0)
 		if economy.tick_count == 2:
 			economy.start_construction(economy.player, scenario["nevyansk"], "rudnik", 1.0, 2)
+		if economy.tick_count == 6:
+			economy.start_construction(economy.player, scenario["makarievo"], "vinokurnya", 1.0, 0)
+		if economy.tick_count % 2 == 0:
+			dispatch_surplus_to_moscow(Goods.Good.MUKA, 8.0, 2.0)
+			dispatch_surplus_to_moscow(Goods.Good.VODKA, 2.0, 2.0)
 		if economy.tick_count == 10:
 			economy.set_hired_wage_offer(kuznitsa, 1.2)
 		if economy.tick_count == 12:

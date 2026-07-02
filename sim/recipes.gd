@@ -32,4 +32,22 @@ const DEFS := {
 		"build_ticks": 5,
 		"display_name": "Кузница",
 	},
+	"melnitsa":
+	{
+		"in": {Goods.Good.ZERNO: 3.0},
+		"out": {Goods.Good.MUKA: 2.0},
+		"labor": 2.0,
+		"build_cost": 70.0,
+		"build_ticks": 4,
+		"display_name": "Мельница",
+	},
+	"vinokurnya":
+	{
+		"in": {Goods.Good.MUKA: 2.0},
+		"out": {Goods.Good.VODKA: 1.0},
+		"labor": 3.0,
+		"build_cost": 140.0,
+		"build_ticks": 6,
+		"display_name": "Винокурня",
+	},
 }
