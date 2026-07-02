@@ -5,6 +5,10 @@
 # Учётные данные экспорта
 export_credentials.cfg
 
+# Локальные ключи API
+.env
+.env.local
+
 # Автогенерируемые переводы (из CSV)
 *.translation
 
