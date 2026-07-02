@@ -1,4 +1,4 @@
-# gameplay.gd — тонкий игровой слой: контракт, события, ход сценария
+# gameplay.gd — тонкий игровой слой: контракты, события, ход сценария
 extends RefCounted
 
 const Goods := preload("res://sim/goods.gd")
@@ -6,15 +6,12 @@ const Labor := preload("res://sim/labor.gd")
 const TradeNode := preload("res://sim/trade_node.gd")
 const Enterprise := preload("res://sim/enterprise.gd")
 const Economy := preload("res://sim/economy.gd")
+const ContractBoard := preload("res://sim/contracts.gd")
 const DemoScenario := preload("res://sim/demo_scenario.gd")
 const EventCatalog := preload("res://sim/event_catalog.gd")
 
-const CONTRACT_GOOD := Goods.Good.ZHELEZO
-const CONTRACT_TARGET := 16.0
-const CONTRACT_DEADLINE := 18
-const CONTRACT_REWARD := 240.0
-const CONTRACT_PENALTY := 140.0
-const SAVE_VERSION := 3
+const SCENARIO_SEED := 1725
+const SAVE_VERSION := 4
 const LLM_CONTEXT_VERSION := 1
 const DEFAULT_SAVE_PATH := "user://savegame.json"
 
@@ -22,50 +19,58 @@ const GRAIN_ROUTE_TICKS := DemoScenario.GRAIN_ROUTE_TICKS
 const IRON_ROUTE_TICKS := DemoScenario.IRON_ROUTE_TICKS
 
 var economy := Economy.new()
+var board := ContractBoard.new()
 var scenario := {}
 var notices: Array[String] = []
 var pending_event := {}
 var completed_event_ids := {}
-var contract_start_sold := 0.0
-var contract_done := false
-var contract_failed := false
 
 
 func setup() -> void:
 	scenario = DemoScenario.setup(economy)
-	var moskva: TradeNode = scenario["moskva"]
-	contract_start_sold = economy.sold_amount(economy.player, moskva, CONTRACT_GOOD)
-	_add_notice(
-		"Заказ: поставить %.0f железа в Москву до тика %d." % [CONTRACT_TARGET, CONTRACT_DEADLINE]
-	)
+	board.setup(SCENARIO_SEED)
+	_add_notice("Приказная доска открыта: новые заказы появляются раз в четыре тика.")
 
 
 func advance_tick() -> void:
 	if has_pending_event():
 		return
 	economy.tick()
+	board.refresh(economy)
+	_drain_contract_notices()
 	DemoScenario.run_logistics(
 		economy, scenario["nevyansk"], scenario["makarievo"], scenario["moskva"]
 	)
-	_check_contract()
 	_maybe_raise_event()
 
 
-func contract_progress() -> float:
-	var moskva: TradeNode = scenario["moskva"]
-	return economy.sold_amount(economy.player, moskva, CONTRACT_GOOD) - contract_start_sold
+func open_contracts() -> Array[Dictionary]:
+	return board.open_offers
+
+
+func player_contracts() -> Array[Dictionary]:
+	return board.contracts_for_agent(economy.player.id)
+
+
+func accept_contract(contract_id: int) -> bool:
+	var ok := board.accept(contract_id, economy.player, economy)
+	_drain_contract_notices()
+	return ok
+
+
+func decline_contract(contract_id: int) -> bool:
+	return board.decline(contract_id)
+
+
+func contract_line(c: Dictionary) -> String:
+	return board.contract_line(c, economy)
 
 
 func contract_status_text() -> String:
-	if contract_done:
-		return "Выполнен: поставлено %.1f / %.1f железа" % [contract_progress(), CONTRACT_TARGET]
-	if contract_failed:
-		return "Провален: поставлено %.1f / %.1f железа" % [contract_progress(), CONTRACT_TARGET]
-	var ticks_left: int = max(0, CONTRACT_DEADLINE - economy.tick_count)
-	return (
-		"Поставить %.1f / %.1f железа в Москву, осталось %d т."
-		% [contract_progress(), CONTRACT_TARGET, ticks_left]
-	)
+	var active_count := player_contracts().size()
+	var open_count := open_contracts().size()
+	var completed: int = board.completed_count.get(economy.player.id, 0)
+	return "Заказы: открыто %d, активно %d, выполнено %d" % [open_count, active_count, completed]
 
 
 func has_pending_event() -> bool:
@@ -148,9 +153,7 @@ func to_save_data() -> Dictionary:
 		"notices": notices,
 		"pending_event": pending_event,
 		"completed_event_ids": completed_event_ids.keys(),
-		"contract_start_sold": contract_start_sold,
-		"contract_done": contract_done,
-		"contract_failed": contract_failed,
+		"contracts": board.to_save_data(),
 	}
 
 
@@ -182,13 +185,11 @@ func to_llm_context() -> Dictionary:
 			"tick": economy.tick_count,
 			"player_money": economy.player.money,
 			"state_relations": economy.player.state_relations,
-			"contract":
+			"contracts":
 			{
-				"good": Goods.NAMES[CONTRACT_GOOD],
-				"target": CONTRACT_TARGET,
-				"progress": contract_progress(),
-				"deadline_tick": CONTRACT_DEADLINE,
-				"status": contract_status_text(),
+				"open": _contracts_for_llm(open_contracts()),
+				"active": _contracts_for_llm(player_contracts()),
+				"completed_count": board.completed_count.get(economy.player.id, 0),
 			},
 			"nodes": _nodes_for_llm(),
 			"enterprises": _enterprises_for_llm(),
@@ -204,6 +205,8 @@ func load_save_data(data: Dictionary) -> void:
 	data = _migrate_save(data)
 	economy = Economy.new()
 	economy.load_save_data(data.get("economy", {}))
+	board = ContractBoard.new()
+	board.load_save_data(data.get("contracts", {}), SCENARIO_SEED)
 	scenario = _scenario_from_economy()
 
 	notices.clear()
@@ -215,29 +218,7 @@ func load_save_data(data: Dictionary) -> void:
 	for event_id in data.get("completed_event_ids", []):
 		completed_event_ids[event_id] = true
 
-	contract_start_sold = data.get("contract_start_sold", 0.0)
-	contract_done = data.get("contract_done", false)
-	contract_failed = data.get("contract_failed", false)
-
-
-func _check_contract() -> void:
-	if contract_done or contract_failed:
-		return
-	if contract_progress() >= CONTRACT_TARGET:
-		contract_done = true
-		economy.player.money += CONTRACT_REWARD
-		economy.player.state_relations = min(100.0, economy.player.state_relations + 8.0)
-		_add_notice(
-			"Московский заказ закрыт. Награда %.0f, связи с казной выросли." % CONTRACT_REWARD
-		)
-		return
-	if economy.tick_count >= CONTRACT_DEADLINE:
-		contract_failed = true
-		economy.player.money = max(0.0, economy.player.money - CONTRACT_PENALTY)
-		economy.player.state_relations = max(0.0, economy.player.state_relations - 12.0)
-		_add_notice(
-			"Срок московского заказа сорван. Штраф %.0f и удар по связям." % CONTRACT_PENALTY
-		)
+	_drain_contract_notices()
 
 
 func _maybe_raise_event() -> void:
@@ -394,6 +375,12 @@ func _add_notice(text: String) -> void:
 		notices.resize(8)
 
 
+func _drain_contract_notices() -> void:
+	for notice in board.notices:
+		_add_notice(notice)
+	board.notices.clear()
+
+
 func _nodes_for_llm() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for n in economy.nodes:
@@ -420,6 +407,29 @@ func _nodes_for_llm() -> Array[Dictionary]:
 					"name": n.name,
 					"goods": goods_state,
 					"available_hired_workers": n.labor_pool[Labor.Type.HIRED],
+				}
+			)
+		)
+	return result
+
+
+func _contracts_for_llm(contracts: Array[Dictionary]) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for c in contracts:
+		var destination: TradeNode = economy.nodes[c["destination_index"]]
+		(
+			result
+			. append(
+				{
+					"id": c["id"],
+					"good": Goods.NAMES[c["good"]],
+					"qty": c["qty"],
+					"destination": destination.name,
+					"deadline_tick": c["deadline_tick"],
+					"reward": c["reward"],
+					"penalty": c["penalty"],
+					"taken_by": c.get("taken_by", ""),
+					"delivered": board.progress(c, economy) if c.get("taken_by", "") != "" else 0.0,
 				}
 			)
 		)

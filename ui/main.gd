@@ -31,6 +31,8 @@ var qty_spin: SpinBox
 var speed_select: OptionButton
 var play_button: Button
 var contract_label: Label
+var open_contract_box: VBoxContainer
+var active_contract_box: VBoxContainer
 var event_title_label: Label
 var event_body_label: Label
 var event_choice_box: VBoxContainer
@@ -249,6 +251,21 @@ func _build_ui() -> void:
 	var right := _add_panel(columns, "Ход")
 	right.custom_minimum_size.x = 280
 
+	var contract_title := Label.new()
+	contract_title.text = "Заказы"
+	right.add_child(contract_title)
+
+	open_contract_box = VBoxContainer.new()
+	open_contract_box.add_theme_constant_override("separation", 6)
+	right.add_child(open_contract_box)
+
+	active_contract_box = VBoxContainer.new()
+	active_contract_box.add_theme_constant_override("separation", 4)
+	right.add_child(active_contract_box)
+
+	var contract_separator := HSeparator.new()
+	right.add_child(contract_separator)
+
 	event_title_label = Label.new()
 	right.add_child(event_title_label)
 
@@ -317,6 +334,7 @@ func _refresh_all() -> void:
 	_refresh_enterprise_select()
 	_refresh_node_panel()
 	_refresh_enterprise_panel()
+	_refresh_contracts()
 	_refresh_event_panel()
 	_refresh_construction()
 	_refresh_caravans()
@@ -346,6 +364,51 @@ func _refresh_event_panel() -> void:
 		button.text = choice["text"]
 		button.pressed.connect(_on_event_choice_pressed.bind(i))
 		event_choice_box.add_child(button)
+
+
+func _refresh_contracts() -> void:
+	_clear_children(open_contract_box)
+	_clear_children(active_contract_box)
+
+	var open_contracts := gameplay.open_contracts()
+	if open_contracts.is_empty():
+		var empty_open := Label.new()
+		empty_open.text = "Открытых заказов нет"
+		open_contract_box.add_child(empty_open)
+	else:
+		for c in open_contracts:
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 6)
+			open_contract_box.add_child(row)
+
+			var label := Label.new()
+			label.text = gameplay.contract_line(c)
+			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_child(label)
+
+			var accept_button := Button.new()
+			accept_button.text = "Взять"
+			accept_button.pressed.connect(_on_accept_contract_pressed.bind(c["id"]))
+			row.add_child(accept_button)
+
+			var decline_button := Button.new()
+			decline_button.text = "Отказ"
+			decline_button.pressed.connect(_on_decline_contract_pressed.bind(c["id"]))
+			row.add_child(decline_button)
+
+	var active_contracts := gameplay.player_contracts()
+	if active_contracts.is_empty():
+		var empty_active := Label.new()
+		empty_active.text = "Активных заказов нет"
+		active_contract_box.add_child(empty_active)
+		return
+
+	for c in active_contracts:
+		var label := Label.new()
+		label.text = gameplay.contract_line(c)
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		active_contract_box.add_child(label)
 
 
 func _refresh_node_panel() -> void:
@@ -623,6 +686,18 @@ func _on_expand_pressed() -> void:
 
 func _on_event_choice_pressed(choice_index: int) -> void:
 	gameplay.choose_event(choice_index)
+	_refresh_all()
+
+
+func _on_accept_contract_pressed(contract_id: int) -> void:
+	var ok := gameplay.accept_contract(contract_id)
+	_add_log("Заказ взят." if ok else "Заказ уже недоступен.")
+	_refresh_all()
+
+
+func _on_decline_contract_pressed(contract_id: int) -> void:
+	var ok := gameplay.decline_contract(contract_id)
+	_add_log("Заказ снят с доски." if ok else "Заказ уже недоступен.")
 	_refresh_all()
 
 

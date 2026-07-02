@@ -15,6 +15,10 @@ func _init() -> void:
 	_check_save_load_determinism()
 	_check_v1_save_migration()
 	_check_construction_roundtrip()
+	_check_contract_rng_determinism()
+	_check_contract_completion()
+	_check_contract_roundtrip()
+	_check_contract_failure_penalty()
 
 	if failed:
 		quit(1)
@@ -113,7 +117,7 @@ func _check_v1_save_migration() -> void:
 	var game := Gameplay.new()
 	game.load_save_data(legacy)
 
-	_expect(game.to_save_data()["version"] == 3, "legacy save did not migrate to current save")
+	_expect(game.to_save_data()["version"] == 4, "legacy save did not migrate to current save")
 	_expect(game.economy.agents.size() == 1, "legacy save should create one agent")
 	_expect(game.economy.player.id == "player", "legacy player id mismatch")
 	_expect(game.economy.player.enterprises.size() == 3, "legacy enterprises not assigned")
@@ -208,6 +212,104 @@ func _check_construction_roundtrip() -> void:
 		loaded_nevyansk.stock[Goods.Good.RUDA] > ruda_before_production,
 		"completed construction did not produce"
 	)
+
+
+func _check_contract_rng_determinism() -> void:
+	var first := Gameplay.new()
+	first.setup()
+	var second := Gameplay.new()
+	second.setup()
+	_advance_with_default_choices(first, 16)
+	_advance_with_default_choices(second, 16)
+
+	var first_contracts := JSON.stringify(first.board.to_save_data())
+	var second_contracts := JSON.stringify(second.board.to_save_data())
+	_expect(first_contracts == second_contracts, "same contract seed produced different offers")
+
+	var different := Gameplay.new()
+	different.setup()
+	different.board.setup(999)
+	_advance_with_default_choices(different, 16)
+	var different_contracts := JSON.stringify(different.board.to_save_data())
+	_expect(first_contracts != different_contracts, "different contract seed produced same offers")
+
+
+func _check_contract_completion() -> void:
+	var game := Gameplay.new()
+	game.setup()
+	var moskva: TradeNode = game.scenario["moskva"]
+	var contract := _contract_fixture(game, Goods.Good.ZHELEZO, 2.0, moskva, 5, 120.0, 60.0)
+	game.board.open_offers.append(contract)
+
+	_expect(game.accept_contract(contract["id"]), "fixture contract was not accepted")
+	game.economy.sell(game.economy.player, moskva, Goods.Good.ZHELEZO, 2.0)
+	game.board.refresh(game.economy)
+	_expect(
+		game.board.completed_count.get(game.economy.player.id, 0) >= 1,
+		"completed contract was not counted"
+	)
+	_expect(game.player_contracts().is_empty(), "completed contract remained active")
+
+
+func _check_contract_roundtrip() -> void:
+	var continuous := Gameplay.new()
+	continuous.setup()
+	_advance_with_default_choices(continuous, 4)
+	_expect(not continuous.open_contracts().is_empty(), "contract generator did not create offer")
+	continuous.accept_contract(continuous.open_contracts()[0]["id"])
+
+	var loaded := Gameplay.new()
+	loaded.load_save_data(continuous.to_save_data())
+
+	_advance_with_default_choices(continuous, 8)
+	_advance_with_default_choices(loaded, 8)
+
+	var continuous_contracts := JSON.stringify(continuous.board.to_save_data())
+	var loaded_contracts := JSON.stringify(loaded.board.to_save_data())
+	_expect(continuous_contracts == loaded_contracts, "contract board diverged after save/load")
+
+
+func _check_contract_failure_penalty() -> void:
+	var game := Gameplay.new()
+	game.setup()
+	var moskva: TradeNode = game.scenario["moskva"]
+	var contract := _contract_fixture(game, Goods.Good.MUKA, 10.0, moskva, 0, 100.0, 80.0)
+	game.board.open_offers.append(contract)
+	var money_before: float = game.economy.player.money
+
+	_expect(game.accept_contract(contract["id"]), "expiring fixture contract was not accepted")
+	game.board.refresh(game.economy)
+	_expect(game.player_contracts().is_empty(), "expired contract remained active")
+	_expect(
+		is_equal_approx(game.economy.player.money, max(0.0, money_before - 80.0)),
+		"expired contract penalty mismatch"
+	)
+
+
+func _contract_fixture(
+	game: Gameplay,
+	good: int,
+	qty: float,
+	destination: TradeNode,
+	deadline_tick: int,
+	reward: float,
+	penalty: float
+) -> Dictionary:
+	var contract_id: int = game.board.next_contract_id
+	game.board.next_contract_id += 1
+	return {
+		"id": contract_id,
+		"good": good,
+		"qty": qty,
+		"destination_index": game.economy.nodes.find(destination),
+		"deadline_tick": deadline_tick,
+		"reward": reward,
+		"penalty": penalty,
+		"relations_bonus": 6.0,
+		"relations_penalty": 8.0,
+		"taken_by": "",
+		"baseline_sold": 0.0,
+	}
 
 
 func _expect(condition: bool, message: String) -> void:

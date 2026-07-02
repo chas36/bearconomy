@@ -81,6 +81,7 @@ static func run_logistics(
 			economy.player, makarievo, nevyansk, Goods.Good.ZERNO, grain_gap, GRAIN_ROUTE_TICKS
 		)
 
+	# v0-заглушка: автопилот демо, убрать в M6.
 	if economy.tick_count % 4 == 0:
 		var qty: float = nevyansk.stock[Goods.Good.ZHELEZO]
 		if qty > 0.5:
