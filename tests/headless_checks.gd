@@ -2,6 +2,7 @@
 extends SceneTree
 
 const Goods := preload("res://sim/goods.gd")
+const Labor := preload("res://sim/labor.gd")
 const Gameplay := preload("res://sim/gameplay.gd")
 const TradeNode := preload("res://sim/trade_node.gd")
 
@@ -12,6 +13,7 @@ func _init() -> void:
 	_check_prices_inside_clamps()
 	_check_save_load_determinism()
 	_check_v1_save_migration()
+	_check_construction_roundtrip()
 
 	if failed:
 		quit(1)
@@ -60,7 +62,7 @@ func _check_v1_save_migration() -> void:
 	var game := Gameplay.new()
 	game.load_save_data(legacy)
 
-	_expect(game.to_save_data()["version"] == 2, "legacy save did not migrate to v2")
+	_expect(game.to_save_data()["version"] == 3, "legacy save did not migrate to current save")
 	_expect(game.economy.agents.size() == 1, "legacy save should create one agent")
 	_expect(game.economy.player.id == "player", "legacy player id mismatch")
 	_expect(game.economy.player.enterprises.size() == 3, "legacy enterprises not assigned")
@@ -107,6 +109,54 @@ func _legacy_v1_save() -> Dictionary:
 		s_data.erase("agent")
 
 	return data
+
+
+func _check_construction_roundtrip() -> void:
+	var game := Gameplay.new()
+	game.setup()
+	var player = game.economy.player
+	var nevyansk = game.scenario["nevyansk"]
+	var kuznitsa = game.scenario["kuznitsa"]
+	var money_before: float = player.money
+
+	var build_ok: bool = game.economy.start_construction(player, nevyansk, "rudnik", 1.0, 2)
+	var expand_ok: bool = game.economy.expand_enterprise(player, kuznitsa, 1.0)
+	_expect(build_ok, "construction did not start")
+	_expect(expand_ok, "expansion did not start")
+	_expect(
+		is_equal_approx(player.money, money_before - 110.0 - 72.0), "construction cost mismatch"
+	)
+
+	_advance_with_default_choices(game, 2)
+	var loaded := Gameplay.new()
+	loaded.load_save_data(game.to_save_data())
+	_expect(loaded.economy.construction_queue.size() == 2, "construction queue lost on save/load")
+	_expect(
+		(
+			loaded.economy.construction_queue[0].remaining_ticks
+			== game.economy.construction_queue[0].remaining_ticks
+		),
+		"construction remaining ticks mismatch after load"
+	)
+
+	_advance_with_default_choices(loaded, 3)
+	var loaded_kuznitsa = loaded.scenario["kuznitsa"]
+	_expect(is_equal_approx(loaded_kuznitsa.capacity, 3.0), "expansion did not increase capacity")
+	_expect(loaded.economy.construction_queue.is_empty(), "construction queue should be empty")
+	_expect(loaded.economy.player.enterprises.size() == 4, "new enterprise not added")
+
+	var new_rudnik = loaded.economy.player.enterprises[3]
+	_expect(
+		new_rudnik.workers[Labor.Type.POSSESSIONAL] == 2,
+		"possessional workers not assigned to new enterprise"
+	)
+	var loaded_nevyansk: TradeNode = loaded.scenario["nevyansk"]
+	var ruda_before_production: float = loaded_nevyansk.stock[Goods.Good.RUDA]
+	_advance_with_default_choices(loaded, 1)
+	_expect(
+		loaded_nevyansk.stock[Goods.Good.RUDA] > ruda_before_production,
+		"completed construction did not produce"
+	)
 
 
 func _expect(condition: bool, message: String) -> void:

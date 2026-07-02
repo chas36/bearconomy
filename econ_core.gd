@@ -54,14 +54,33 @@ func report() -> void:
 					]
 				)
 			)
+	if not economy.construction_queue.is_empty():
+		print("  Стройки:")
+		for c in economy.construction_queue:
+			if c.expand_target != null:
+				print(
+					(
+						"    %s: +%.1f, осталось %d т."
+						% [c.expand_target.name, c.capacity, c.remaining_ticks]
+					)
+				)
+			else:
+				print(
+					(
+						"    %s в %s: %.1f, осталось %d т."
+						% [c.display_name, c.node.name, c.capacity, c.remaining_ticks]
+					)
+				)
 
 
 func _init() -> void:
 	setup()
 	print(">>> Демидовский прототип: руда -> чугун -> железо, 3 типа труда <<<")
 	var kuznitsa: Enterprise = scenario["kuznitsa"]
-	for i in range(16):
+	for i in range(20):
 		gameplay.advance_tick()
+		if economy.tick_count == 2:
+			economy.start_construction(economy.player, scenario["nevyansk"], "rudnik", 1.0, 2)
 		if economy.tick_count == 10:
 			economy.set_hired_wage_offer(kuznitsa, 1.2)
 		if economy.tick_count == 12:

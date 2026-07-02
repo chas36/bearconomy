@@ -14,7 +14,7 @@ const CONTRACT_TARGET := 16.0
 const CONTRACT_DEADLINE := 18
 const CONTRACT_REWARD := 240.0
 const CONTRACT_PENALTY := 140.0
-const SAVE_VERSION := 2
+const SAVE_VERSION := 3
 const LLM_CONTEXT_VERSION := 1
 const DEFAULT_SAVE_PATH := "user://savegame.json"
 
@@ -193,6 +193,7 @@ func to_llm_context() -> Dictionary:
 			"nodes": _nodes_for_llm(),
 			"enterprises": _enterprises_for_llm(),
 			"caravans": _caravans_for_llm(),
+			"construction": _construction_for_llm(),
 		},
 		"pending_event": _pending_event_for_llm(),
 		"recent_notices": notices,
@@ -463,6 +464,27 @@ func _caravans_for_llm() -> Array[Dictionary]:
 					"qty": c.qty,
 					"remaining_ticks": c.remaining_ticks,
 					"sell_on_arrival": c.sell_on_arrival,
+				}
+			)
+		)
+	return result
+
+
+func _construction_for_llm() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for c in economy.construction_queue:
+		(
+			result
+			. append(
+				{
+					"owner": c.owner_id,
+					"node": c.node.name,
+					"recipe": c.recipe,
+					"display_name": c.display_name,
+					"capacity": c.capacity,
+					"remaining_ticks": c.remaining_ticks,
+					"possessional_workers": c.possessional_workers,
+					"is_expansion": c.expand_target != null,
 				}
 			)
 		)

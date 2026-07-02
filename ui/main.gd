@@ -3,10 +3,13 @@ extends Control
 
 const Goods := preload("res://sim/goods.gd")
 const Labor := preload("res://sim/labor.gd")
+const Recipes := preload("res://sim/recipes.gd")
 const TradeNode := preload("res://sim/trade_node.gd")
 const Enterprise := preload("res://sim/enterprise.gd")
 const Gameplay := preload("res://sim/gameplay.gd")
 const OpenRouterNpc := preload("res://game/openrouter_npc.gd")
+
+const BUILD_RECIPE_IDS := ["rudnik", "domna", "kuznitsa"]
 
 var gameplay := Gameplay.new()
 var economy
@@ -34,6 +37,9 @@ var event_choice_box: VBoxContainer
 var event_llm_button: Button
 var node_grid: GridContainer
 var enterprise_grid: GridContainer
+var construction_recipe_select: OptionButton
+var possessional_spin: SpinBox
+var construction_box: VBoxContainer
 var caravan_box: VBoxContainer
 var log_label: Label
 var wage_spin: SpinBox
@@ -178,6 +184,28 @@ func _build_ui() -> void:
 	iron_button.pressed.connect(_on_send_iron_pressed)
 	logistics_row.add_child(iron_button)
 
+	var construction_row := HBoxContainer.new()
+	construction_row.add_theme_constant_override("separation", 8)
+	left.add_child(construction_row)
+
+	construction_recipe_select = OptionButton.new()
+	for recipe_id in BUILD_RECIPE_IDS:
+		construction_recipe_select.add_item(Recipes.DEFS[recipe_id]["display_name"])
+	construction_row.add_child(construction_recipe_select)
+
+	possessional_spin = SpinBox.new()
+	possessional_spin.min_value = 0.0
+	possessional_spin.max_value = 10.0
+	possessional_spin.step = 1.0
+	possessional_spin.value = 2.0
+	possessional_spin.custom_minimum_size.x = 80
+	construction_row.add_child(possessional_spin)
+
+	var build_button := Button.new()
+	build_button.text = "Построить"
+	build_button.pressed.connect(_on_build_pressed)
+	construction_row.add_child(build_button)
+
 	var middle := _add_panel(columns, "Предприятие")
 	middle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
@@ -213,6 +241,11 @@ func _build_ui() -> void:
 	ascribed_button.pressed.connect(_on_ascribed_pressed)
 	middle.add_child(ascribed_button)
 
+	var expand_button := Button.new()
+	expand_button.text = "Расширить +1"
+	expand_button.pressed.connect(_on_expand_pressed)
+	middle.add_child(expand_button)
+
 	var right := _add_panel(columns, "Ход")
 	right.custom_minimum_size.x = 280
 
@@ -234,6 +267,12 @@ func _build_ui() -> void:
 
 	var event_separator := HSeparator.new()
 	right.add_child(event_separator)
+
+	construction_box = VBoxContainer.new()
+	right.add_child(construction_box)
+
+	var construction_separator := HSeparator.new()
+	right.add_child(construction_separator)
 
 	caravan_box = VBoxContainer.new()
 	right.add_child(caravan_box)
@@ -275,9 +314,11 @@ func _refresh_all() -> void:
 		"Деньги %.1f | Казна %.1f" % [economy.player.money, economy.player.state_relations]
 	)
 	contract_label.text = gameplay.contract_status_text()
+	_refresh_enterprise_select()
 	_refresh_node_panel()
 	_refresh_enterprise_panel()
 	_refresh_event_panel()
+	_refresh_construction()
 	_refresh_caravans()
 	log_label.text = _joined_log_text()
 
@@ -346,6 +387,44 @@ func _refresh_enterprise_panel() -> void:
 	_add_grid_label(enterprise_grid, "%d" % e.workers[Labor.Type.POSSESSIONAL])
 
 
+func _refresh_enterprise_select() -> void:
+	var current_count := enterprise_select.item_count
+	if current_count == economy.player.enterprises.size():
+		return
+
+	selected_enterprise_index = min(
+		selected_enterprise_index, economy.player.enterprises.size() - 1
+	)
+	enterprise_select.clear()
+	for e in economy.player.enterprises:
+		enterprise_select.add_item(e.name)
+	enterprise_select.select(selected_enterprise_index)
+
+
+func _refresh_construction() -> void:
+	_clear_children(construction_box)
+	var title := Label.new()
+	title.text = "Стройки"
+	construction_box.add_child(title)
+
+	if economy.construction_queue.is_empty():
+		var empty := Label.new()
+		empty.text = "Очередь пуста"
+		construction_box.add_child(empty)
+		return
+
+	for c in economy.construction_queue:
+		var label := Label.new()
+		if c.expand_target != null:
+			label.text = "%s: +%.1f, %d т." % [c.expand_target.name, c.capacity, c.remaining_ticks]
+		else:
+			label.text = (
+				"%s в %s: %.1f, %d т."
+				% [c.display_name, c.node.name, c.capacity, c.remaining_ticks]
+			)
+		construction_box.add_child(label)
+
+
 func _refresh_caravans() -> void:
 	_clear_children(caravan_box)
 	if economy.caravans.is_empty():
@@ -378,10 +457,14 @@ func _add_grid_label(grid: GridContainer, text: String) -> void:
 
 
 func _selected_node() -> TradeNode:
+	selected_node_index = min(selected_node_index, economy.nodes.size() - 1)
 	return economy.nodes[selected_node_index]
 
 
 func _selected_enterprise() -> Enterprise:
+	selected_enterprise_index = min(
+		selected_enterprise_index, economy.player.enterprises.size() - 1
+	)
 	return economy.player.enterprises[selected_enterprise_index]
 
 
@@ -519,6 +602,22 @@ func _on_ascribed_pressed() -> void:
 	var e := _selected_enterprise()
 	var granted: int = economy.request_ascribed_workers(economy.player, e, 1)
 	_add_log("%s: приписных +%d" % [e.name, granted])
+	_refresh_all()
+
+
+func _on_build_pressed() -> void:
+	var recipe_id: String = BUILD_RECIPE_IDS[construction_recipe_select.selected]
+	var ok: bool = economy.start_construction(
+		economy.player, _selected_node(), recipe_id, 1.0, int(possessional_spin.value)
+	)
+	_add_log("Стройка начата." if ok else "Стройка не начата: не хватает денег.")
+	_refresh_all()
+
+
+func _on_expand_pressed() -> void:
+	var e := _selected_enterprise()
+	var ok: bool = economy.expand_enterprise(economy.player, e, 1.0)
+	_add_log(("%s: расширение начато." % e.name) if ok else "Расширение не начато.")
 	_refresh_all()
 
 

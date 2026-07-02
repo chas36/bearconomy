@@ -7,6 +7,7 @@ const Recipes := preload("res://sim/recipes.gd")
 const TradeNode := preload("res://sim/trade_node.gd")
 const Enterprise := preload("res://sim/enterprise.gd")
 const Caravan := preload("res://sim/caravan.gd")
+const Construction := preload("res://sim/construction.gd")
 
 
 class Agent:
@@ -25,6 +26,7 @@ class Agent:
 
 var nodes: Array[TradeNode] = []
 var caravans: Array[Caravan] = []
+var construction_queue: Array[Construction] = []
 var agents: Array[Agent] = []
 var player := Agent.new()
 var tick_count := 0
@@ -111,7 +113,10 @@ func tick() -> void:
 	# 4. ЛОГИСТИКА: ранее отправленные караваны прибывают после движения цен
 	_advance_caravans()
 
-	# 5. РЫНОК ТРУДА: наёмные реагируют на ставку, казённые связи понемногу восстанавливаются
+	# 5. СТРОЙКА: завершённые проекты появляются до рынка труда
+	_advance_construction()
+
+	# 6. РЫНОК ТРУДА: наёмные реагируют на ставку, казённые связи понемногу восстанавливаются
 	_update_labor_market()
 
 
@@ -211,6 +216,72 @@ func set_hired_wage_offer(e: Enterprise, wage: float) -> void:
 	print("  [ТРУД] %s: ставка наёмным %.2f за тик" % [e.name, e.hired_wage_offer])
 
 
+func start_construction(
+	agent: Agent, n: TradeNode, recipe: String, capacity: float, possessional := 0
+) -> bool:
+	if not Recipes.DEFS.has(recipe) or capacity <= 0.0:
+		return false
+
+	var max_possessional := int(floor(capacity * Labor.POSSESSIONAL_MAX_PER_CAPACITY))
+	possessional = clamp(possessional, 0, max_possessional)
+	var r: Dictionary = Recipes.DEFS[recipe]
+	var cost: float = r["build_cost"] * capacity + possessional * Labor.POSSESSIONAL_PRICE
+	if agent.money < cost:
+		return false
+
+	agent.money -= cost
+	var display_name := _next_enterprise_name(agent, recipe)
+	var construction := Construction.new(
+		agent.id, n, recipe, capacity, r["build_ticks"], possessional, null, display_name
+	)
+	construction_queue.append(construction)
+	print(
+		(
+			"  [СТРОЙКА] %s: начато строительство %s в %s, мощность %.1f, срок %d т. (%.1f)"
+			% [
+				agent.display_name,
+				display_name,
+				n.name,
+				capacity,
+				construction.remaining_ticks,
+				cost
+			]
+		)
+	)
+	return true
+
+
+func expand_enterprise(agent: Agent, e: Enterprise, extra_capacity: float) -> bool:
+	if extra_capacity <= 0.0 or not agent.enterprises.has(e):
+		return false
+
+	var r: Dictionary = Recipes.DEFS[e.recipe]
+	var cost: float = r["build_cost"] * extra_capacity * 0.8
+	if agent.money < cost:
+		return false
+
+	agent.money -= cost
+	var ticks := int(ceil(float(r["build_ticks"]) * 0.6))
+	var construction := Construction.new(
+		agent.id,
+		e.node,
+		e.recipe,
+		extra_capacity,
+		ticks,
+		0,
+		e,
+		"%s: расширение +%.1f" % [e.name, extra_capacity]
+	)
+	construction_queue.append(construction)
+	print(
+		(
+			"  [СТРОЙКА] %s: начато расширение %s на %.1f, срок %d т. (%.1f)"
+			% [agent.display_name, e.name, extra_capacity, construction.remaining_ticks, cost]
+		)
+	)
+	return true
+
+
 func request_ascribed_workers(agent: Agent, e: Enterprise, qty: int) -> int:
 	var open_slots := e.open_worker_slots()
 	var max_by_relations := int(floor(agent.state_relations / Labor.ASCRIBED_RELATION_COST))
@@ -284,6 +355,42 @@ func _arrive_caravan(c: Caravan) -> void:
 				% [owner_name, c.qty, Goods.NAMES[c.good], c.origin.name, c.destination.name]
 			)
 		)
+
+
+func _advance_construction() -> void:
+	var active: Array[Construction] = []
+	for c in construction_queue:
+		if c.advance():
+			_finish_construction(c)
+		else:
+			active.append(c)
+	construction_queue = active
+
+
+func _finish_construction(c: Construction) -> void:
+	var agent := agent_by_id(c.owner_id)
+	if agent == null:
+		agent = player
+
+	if c.expand_target != null:
+		c.expand_target.capacity += c.capacity
+		print(
+			(
+				"  [СТРОЙКА] %s: расширение %s завершено, мощность %.1f"
+				% [agent.display_name, c.expand_target.name, c.expand_target.capacity]
+			)
+		)
+		return
+
+	var e := Enterprise.new(c.display_name, c.node, c.recipe, c.capacity)
+	e.workers[Labor.Type.POSSESSIONAL] = c.possessional_workers
+	agent.enterprises.append(e)
+	print(
+		(
+			"  [СТРОЙКА] %s: %s в %s завершён, посессионных %d"
+			% [agent.display_name, e.name, e.node.name, c.possessional_workers]
+		)
+	)
 
 
 func _update_labor_market() -> void:
@@ -369,6 +476,18 @@ func _record_sale(agent: Agent, n: TradeNode, g: int, qty: float) -> void:
 	sold_total[agent.id][n][g] = sold_total[agent.id][n].get(g, 0.0) + qty
 
 
+func _next_enterprise_name(agent: Agent, recipe: String) -> String:
+	var base: String = Recipes.DEFS[recipe].get("display_name", recipe)
+	var count := 0
+	for e in agent.enterprises:
+		if e.recipe == recipe:
+			count += 1
+	for c in construction_queue:
+		if c.owner_id == agent.id and c.expand_target == null and c.recipe == recipe:
+			count += 1
+	return "%s №%d" % [base, count + 1]
+
+
 func to_save_data() -> Dictionary:
 	var agent_data: Array[Dictionary] = []
 	for agent in agents:
@@ -437,6 +556,25 @@ func to_save_data() -> Dictionary:
 			)
 		)
 
+	var all_enterprise_data := all_enterprises()
+	var construction_data: Array[Dictionary] = []
+	for c in construction_queue:
+		(
+			construction_data
+			. append(
+				{
+					"owner": c.owner_id,
+					"node": nodes.find(c.node),
+					"recipe": c.recipe,
+					"capacity": c.capacity,
+					"remaining_ticks": c.remaining_ticks,
+					"possessional": c.possessional_workers,
+					"expand_target": all_enterprise_data.find(c.expand_target),
+					"display_name": c.display_name,
+				}
+			)
+		)
+
 	var sales_data: Array[Dictionary] = []
 	for agent_id in sold_total:
 		for n in sold_total[agent_id]:
@@ -457,6 +595,7 @@ func to_save_data() -> Dictionary:
 		"nodes": node_data,
 		"enterprises": enterprise_data,
 		"caravans": caravan_data,
+		"construction_queue": construction_data,
 		"sold_total": sales_data,
 	}
 
@@ -506,6 +645,26 @@ func load_save_data(data: Dictionary) -> void:
 		e.hired_wage_offer = e_data.get("hired_wage_offer", Labor.WAGE[Labor.Type.HIRED])
 		_load_number_dict(e.workers, e_data.get("workers", {}), Labor.Type.values())
 		owner.enterprises.append(e)
+
+	construction_queue.clear()
+	var enterprise_list := all_enterprises()
+	for c_data in data.get("construction_queue", []):
+		var node_index: int = c_data.get("node", 0)
+		var expand_index: int = c_data.get("expand_target", -1)
+		var expand_target: Enterprise = null
+		if expand_index >= 0 and expand_index < enterprise_list.size():
+			expand_target = enterprise_list[expand_index]
+		var c := Construction.new(
+			c_data.get("owner", "player"),
+			nodes[node_index],
+			c_data.get("recipe", "rudnik"),
+			c_data.get("capacity", 1.0),
+			c_data.get("remaining_ticks", 1),
+			c_data.get("possessional", 0),
+			expand_target,
+			c_data.get("display_name", "Стройка")
+		)
+		construction_queue.append(c)
 
 	caravans.clear()
 	for c_data in data.get("caravans", []):
