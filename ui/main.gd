@@ -53,7 +53,7 @@ func _ready() -> void:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_SPACE:
+		if event.keycode == KEY_SPACE and not gameplay.has_pending_event():
 			_set_speed(last_speed if current_speed == 0 else 0)
 			_top_bar.show_speed(current_speed)
 
@@ -197,6 +197,8 @@ func _refresh_all() -> void:
 
 func _advance_tick() -> void:
 	if gameplay.has_pending_event():
+		_set_speed(0)
+		_top_bar.show_speed(0)
 		_show_pending_event()
 		return
 	gameplay.advance_tick()
