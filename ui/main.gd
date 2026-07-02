@@ -8,6 +8,7 @@ const TradeNode := preload("res://sim/trade_node.gd")
 const Enterprise := preload("res://sim/enterprise.gd")
 const Gameplay := preload("res://sim/gameplay.gd")
 const OpenRouterNpc := preload("res://game/openrouter_npc.gd")
+const MapView := preload("res://ui/map_view.gd")
 
 const BUILD_RECIPE_IDS := ["rudnik", "domna", "kuznitsa", "melnitsa", "vinokurnya"]
 
@@ -45,6 +46,7 @@ var construction_box: VBoxContainer
 var caravan_box: VBoxContainer
 var log_label: Label
 var wage_spin: SpinBox
+var map_view: MapView
 var log_lines: Array[String] = []
 
 
@@ -124,9 +126,18 @@ func _build_ui() -> void:
 	contract_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	page.add_child(contract_label)
 
+	map_view = MapView.new()
+	map_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	map_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	map_view.size_flags_stretch_ratio = 1.5
+	map_view.custom_minimum_size.y = 260
+	map_view.node_clicked.connect(_on_map_node_clicked)
+	page.add_child(map_view)
+
 	var columns := HBoxContainer.new()
 	columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	columns.size_flags_stretch_ratio = 1.0
 	columns.add_theme_constant_override("separation", 10)
 	page.add_child(columns)
 
@@ -306,6 +317,7 @@ func _build_ui() -> void:
 func _add_panel(parent: Container, title: String) -> VBoxContainer:
 	var panel := PanelContainer.new()
 	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	parent.add_child(panel)
 
 	var margin := MarginContainer.new()
@@ -331,6 +343,8 @@ func _refresh_all() -> void:
 		"Деньги %.1f | Казна %.1f" % [economy.player.money, economy.player.state_relations]
 	)
 	contract_label.text = gameplay.contract_status_text()
+	map_view.selected_node_index = selected_node_index
+	map_view.refresh(economy)
 	_refresh_enterprise_select()
 	_refresh_node_panel()
 	_refresh_enterprise_panel()
@@ -597,6 +611,12 @@ func _on_tick_timer_timeout() -> void:
 
 func _on_node_selected(index: int) -> void:
 	selected_node_index = index
+	_refresh_all()
+
+
+func _on_map_node_clicked(index: int) -> void:
+	selected_node_index = index
+	node_select.select(index)
 	_refresh_all()
 
 

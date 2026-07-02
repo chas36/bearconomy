@@ -21,6 +21,18 @@ func setup() -> void:
 	scenario = gameplay.scenario
 
 
+# Явное действие игрока: сбыт железа в столицу (автопилот убран в M6).
+func dispatch_iron_to_moscow() -> void:
+	var nevyansk = scenario["nevyansk"]
+	var moskva = scenario["moskva"]
+	var qty: float = nevyansk.stock[Goods.Good.ZHELEZO]
+	if qty <= 0.5:
+		return
+	economy.dispatch(
+		economy.player, nevyansk, moskva, Goods.Good.ZHELEZO, qty, Gameplay.IRON_ROUTE_TICKS, true
+	)
+
+
 func dispatch_surplus_to_moscow(good: int, reserve: float, max_qty: float) -> void:
 	var makarievo = scenario["makarievo"]
 	var moskva = scenario["moskva"]
@@ -98,6 +110,8 @@ func _init() -> void:
 		if economy.tick_count % 2 == 0:
 			dispatch_surplus_to_moscow(Goods.Good.MUKA, 8.0, 2.0)
 			dispatch_surplus_to_moscow(Goods.Good.VODKA, 2.0, 2.0)
+		if economy.tick_count % 4 == 0:
+			dispatch_iron_to_moscow()
 		if economy.tick_count == 10:
 			economy.set_hired_wage_offer(kuznitsa, 1.2)
 		if economy.tick_count == 12:

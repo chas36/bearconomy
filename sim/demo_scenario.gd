@@ -78,20 +78,12 @@ static func setup(economy) -> Dictionary:
 	}
 
 
-static func run_logistics(
-	economy, nevyansk: TradeNode, makarievo: TradeNode, moskva: TradeNode
-) -> void:
+# Автозакупка зерна для завода; автопилот железа убран в M6 —
+# отправка железа теперь явное действие игрока (UI или скрипт демо).
+static func run_logistics(economy, nevyansk: TradeNode, makarievo: TradeNode) -> void:
 	var grain_in_transit: float = economy.cargo_in_transit_to(nevyansk, Goods.Good.ZERNO)
 	var grain_gap: float = GRAIN_TOPUP - nevyansk.stock[Goods.Good.ZERNO] - grain_in_transit
 	if grain_gap > 0.5:
 		economy.buy_and_dispatch(
 			economy.player, makarievo, nevyansk, Goods.Good.ZERNO, grain_gap, GRAIN_ROUTE_TICKS
 		)
-
-	# v0-заглушка: автопилот демо, убрать в M6.
-	if economy.tick_count % 4 == 0:
-		var qty: float = nevyansk.stock[Goods.Good.ZHELEZO]
-		if qty > 0.5:
-			economy.dispatch(
-				economy.player, nevyansk, moskva, Goods.Good.ZHELEZO, qty, IRON_ROUTE_TICKS, true
-			)
