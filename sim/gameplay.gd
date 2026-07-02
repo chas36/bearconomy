@@ -9,6 +9,7 @@ const Economy := preload("res://sim/economy.gd")
 const ContractBoard := preload("res://sim/contracts.gd")
 const DemoScenario := preload("res://sim/demo_scenario.gd")
 const EventCatalog := preload("res://sim/event_catalog.gd")
+const AiAgent := preload("res://sim/ai_agent.gd")
 
 const SCENARIO_SEED := 1725
 const SAVE_VERSION := 4
@@ -21,6 +22,7 @@ const IRON_ROUTE_TICKS := DemoScenario.IRON_ROUTE_TICKS
 var economy := Economy.new()
 var board := ContractBoard.new()
 var scenario := {}
+var ai_controllers: Array[AiAgent] = []
 var notices: Array[String] = []
 var pending_event := {}
 var completed_event_ids := {}
@@ -29,6 +31,7 @@ var completed_event_ids := {}
 func setup() -> void:
 	scenario = DemoScenario.setup(economy)
 	board.setup(SCENARIO_SEED)
+	_rebuild_ai_controllers()
 	_add_notice("Приказная доска открыта: новые заказы появляются раз в четыре тика.")
 
 
@@ -37,6 +40,8 @@ func advance_tick() -> void:
 		return
 	economy.tick()
 	board.refresh(economy)
+	_drain_contract_notices()
+	_run_ai_controllers()
 	_drain_contract_notices()
 	DemoScenario.run_logistics(
 		economy, scenario["nevyansk"], scenario["makarievo"], scenario["moskva"]
@@ -208,6 +213,7 @@ func load_save_data(data: Dictionary) -> void:
 	board = ContractBoard.new()
 	board.load_save_data(data.get("contracts", {}), SCENARIO_SEED)
 	scenario = _scenario_from_economy()
+	_rebuild_ai_controllers()
 
 	notices.clear()
 	for notice in data.get("notices", []):
@@ -241,6 +247,18 @@ func _scenario_from_economy() -> Dictionary:
 		"domna": _find_enterprise("Домна"),
 		"kuznitsa": _find_enterprise("Кузница"),
 	}
+
+
+func _rebuild_ai_controllers() -> void:
+	ai_controllers.clear()
+	for agent in economy.agents:
+		if not agent.is_player:
+			ai_controllers.append(AiAgent.new(agent.id))
+
+
+func _run_ai_controllers() -> void:
+	for controller in ai_controllers:
+		controller.act(economy, board)
 
 
 func _find_node(node_name: String) -> TradeNode:

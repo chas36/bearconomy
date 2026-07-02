@@ -19,6 +19,8 @@ func _init() -> void:
 	_check_contract_completion()
 	_check_contract_roundtrip()
 	_check_contract_failure_penalty()
+	_check_ai_competitor_contract()
+	_check_ai_competitor_construction()
 
 	if failed:
 		quit(1)
@@ -107,9 +109,10 @@ func _check_save_load_determinism() -> void:
 	_advance_with_default_choices(continuous, 8)
 	_advance_with_default_choices(loaded, 8)
 
-	var continuous_json := JSON.stringify(continuous.to_save_data())
-	var loaded_json := JSON.stringify(loaded.to_save_data())
-	_expect(continuous_json == loaded_json, "save/load roundtrip diverged after 8 ticks")
+	_expect(
+		_states_equal(continuous.to_save_data(), loaded.to_save_data()),
+		"save/load roundtrip diverged after 8 ticks"
+	)
 
 
 func _check_v1_save_migration() -> void:
@@ -153,6 +156,12 @@ func _legacy_v1_save() -> Dictionary:
 		"state_relations": agent_data["state_relations"],
 	}
 	economy_data.erase("agents")
+
+	var player_enterprises: Array[Dictionary] = []
+	for e_data in economy_data["enterprises"]:
+		if e_data.get("owner", "player") == "player":
+			player_enterprises.append(e_data)
+	economy_data["enterprises"] = player_enterprises
 
 	for e_data in economy_data["enterprises"]:
 		e_data.erase("owner")
@@ -254,19 +263,22 @@ func _check_contract_completion() -> void:
 func _check_contract_roundtrip() -> void:
 	var continuous := Gameplay.new()
 	continuous.setup()
+	continuous.ai_controllers.clear()
 	_advance_with_default_choices(continuous, 4)
 	_expect(not continuous.open_contracts().is_empty(), "contract generator did not create offer")
 	continuous.accept_contract(continuous.open_contracts()[0]["id"])
 
 	var loaded := Gameplay.new()
 	loaded.load_save_data(continuous.to_save_data())
+	loaded.ai_controllers.clear()
 
 	_advance_with_default_choices(continuous, 8)
 	_advance_with_default_choices(loaded, 8)
 
-	var continuous_contracts := JSON.stringify(continuous.board.to_save_data())
-	var loaded_contracts := JSON.stringify(loaded.board.to_save_data())
-	_expect(continuous_contracts == loaded_contracts, "contract board diverged after save/load")
+	_expect(
+		_states_equal(continuous.board.to_save_data(), loaded.board.to_save_data()),
+		"contract board diverged after save/load"
+	)
 
 
 func _check_contract_failure_penalty() -> void:
@@ -283,6 +295,41 @@ func _check_contract_failure_penalty() -> void:
 	_expect(
 		is_equal_approx(game.economy.player.money, max(0.0, money_before - 80.0)),
 		"expired contract penalty mismatch"
+	)
+
+
+func _check_ai_competitor_contract() -> void:
+	var game := Gameplay.new()
+	game.setup()
+	var ai_agent = game.economy.agent_by_id("stroganov")
+	var moskva: TradeNode = game.scenario["moskva"]
+	var contract := _contract_fixture(game, Goods.Good.MUKA, 4.0, moskva, 20, 160.0, 40.0)
+	game.board.open_offers.append(contract)
+
+	_expect(ai_agent != null, "AI competitor was not created")
+	_expect(game.ai_controllers.size() == 1, "AI controller registry size mismatch")
+	_advance_with_default_choices(game, 40)
+	_expect(
+		game.board.completed_count.get(ai_agent.id, 0) >= 1,
+		"AI competitor did not complete fixture contract"
+	)
+
+
+func _check_ai_competitor_construction() -> void:
+	var game := Gameplay.new()
+	game.setup()
+	var ai_agent = game.economy.agent_by_id("stroganov")
+	ai_agent.money = 700.0
+	var initial_enterprises: int = ai_agent.enterprises.size()
+
+	_advance_with_default_choices(game, 10)
+	var has_ai_construction := false
+	for c in game.economy.construction_queue:
+		if c.owner_id == ai_agent.id:
+			has_ai_construction = true
+	_expect(
+		has_ai_construction or ai_agent.enterprises.size() > initial_enterprises,
+		"AI competitor did not start or finish construction"
 	)
 
 
@@ -317,3 +364,24 @@ func _expect(condition: bool, message: String) -> void:
 		return
 	failed = true
 	push_error(message)
+
+
+func _states_equal(a, b) -> bool:
+	var result := true
+	if typeof(a) != typeof(b):
+		result = false
+	elif typeof(a) == TYPE_DICTIONARY:
+		result = a.size() == b.size()
+		for key in a:
+			if result and (not b.has(key) or not _states_equal(a[key], b[key])):
+				result = false
+				break
+	elif typeof(a) == TYPE_ARRAY:
+		result = a.size() == b.size()
+		for i in range(a.size()):
+			if result and not _states_equal(a[i], b[i]):
+				result = false
+				break
+	else:
+		result = a == b
+	return result

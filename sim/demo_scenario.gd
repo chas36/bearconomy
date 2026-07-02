@@ -22,7 +22,7 @@ static func setup(economy) -> Dictionary:
 	nevyansk.target_stock[Goods.Good.ZHELEZO] = 5.0
 	nevyansk.labor_pool = {Labor.Type.HIRED: 2, Labor.Type.ASCRIBED: 0, Labor.Type.POSSESSIONAL: 8}
 
-	makarievo.stock[Goods.Good.ZERNO] = 340.0  # v0-заглушка: житница без своего производства
+	makarievo.stock[Goods.Good.ZERNO] = 520.0  # v0-заглушка: житница без своего производства
 	makarievo.target_stock[Goods.Good.ZERNO] = 100.0
 	makarievo.target_stock[Goods.Good.MUKA] = 8.0
 	makarievo.labor_pool = {
@@ -62,12 +62,19 @@ static func setup(economy) -> Dictionary:
 	economy.request_ascribed_workers(player, domna, 4)
 	economy.set_hired_wage_offer(kuznitsa, 1.8)
 
+	var stroganov = economy.add_agent("stroganov", "Строгановы", false)
+	stroganov.money = 400.0
+	stroganov.enterprises.clear()
+	var stroganov_mill := Enterprise.new("Строгановская мельница", makarievo, "melnitsa", 1.5)
+	stroganov.enterprises.append(stroganov_mill)
+
 	return {
 		"nevyansk": nevyansk,
 		"makarievo": makarievo,
 		"moskva": moskva,
 		"domna": domna,
 		"kuznitsa": kuznitsa,
+		"stroganov_mill": stroganov_mill,
 	}
 
 
