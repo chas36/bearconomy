@@ -6,6 +6,7 @@ const Labor := preload("res://sim/labor.gd")
 const TradeNode := preload("res://sim/trade_node.gd")
 const Enterprise := preload("res://sim/enterprise.gd")
 const Gameplay := preload("res://sim/gameplay.gd")
+const OpenRouterNpc := preload("res://game/openrouter_npc.gd")
 
 var gameplay := Gameplay.new()
 var economy
@@ -30,6 +31,7 @@ var contract_label: Label
 var event_title_label: Label
 var event_body_label: Label
 var event_choice_box: VBoxContainer
+var event_llm_button: Button
 var node_grid: GridContainer
 var enterprise_grid: GridContainer
 var caravan_box: VBoxContainer
@@ -221,6 +223,11 @@ func _build_ui() -> void:
 	event_body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	right.add_child(event_body_label)
 
+	event_llm_button = Button.new()
+	event_llm_button.text = "LLM-описание"
+	event_llm_button.pressed.connect(_on_event_llm_pressed)
+	right.add_child(event_llm_button)
+
 	event_choice_box = VBoxContainer.new()
 	event_choice_box.add_theme_constant_override("separation", 6)
 	right.add_child(event_choice_box)
@@ -285,10 +292,12 @@ func _refresh_event_panel() -> void:
 	if not gameplay.has_pending_event():
 		event_title_label.text = "Событий нет"
 		event_body_label.text = ""
+		event_llm_button.disabled = true
 		return
 
 	event_title_label.text = gameplay.pending_event_title()
 	event_body_label.text = gameplay.pending_event_body()
+	event_llm_button.disabled = false
 	var choices := gameplay.pending_event_choices()
 	for i in range(choices.size()):
 		var choice: Dictionary = choices[i]
@@ -507,6 +516,26 @@ func _on_ascribed_pressed() -> void:
 
 func _on_event_choice_pressed(choice_index: int) -> void:
 	gameplay.choose_event(choice_index)
+	_refresh_all()
+
+
+func _on_event_llm_pressed() -> void:
+	if not gameplay.has_pending_event():
+		return
+	event_llm_button.disabled = true
+	event_llm_button.text = "Запрос..."
+	_refresh_all()
+
+	var client := OpenRouterNpc.new()
+	var result := client.generate_event_text(gameplay.to_llm_context())
+	if result.get("ok", false):
+		gameplay.set_pending_event_narrative(result["text"])
+		_add_log("LLM: описание обновлено (%s)." % result.get("model", "model"))
+	else:
+		_add_log("LLM: %s" % result.get("error", "не удалось получить описание"))
+
+	event_llm_button.text = "LLM-описание"
+	event_llm_button.disabled = false
 	_refresh_all()
 
 

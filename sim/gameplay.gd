@@ -77,7 +77,7 @@ func pending_event_title() -> String:
 
 
 func pending_event_body() -> String:
-	return pending_event.get("body", "")
+	return pending_event.get("generated_body", pending_event.get("body", ""))
 
 
 func pending_event_choices() -> Array:
@@ -86,6 +86,16 @@ func pending_event_choices() -> Array:
 
 func pending_event_tags() -> Array:
 	return pending_event.get("tags", [])
+
+
+func set_pending_event_narrative(text: String) -> void:
+	if pending_event.is_empty():
+		return
+	var clean_text := text.strip_edges()
+	if clean_text.is_empty():
+		return
+	pending_event["generated_body"] = clean_text
+	_add_notice("Событие получило LLM-описание.")
 
 
 func choose_event(choice_index: int) -> void:
