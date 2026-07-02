@@ -37,20 +37,22 @@ static func setup(economy) -> Dictionary:
 
 	var nodes: Array[TradeNode] = [nevyansk, makarievo, moskva]
 	economy.nodes = nodes
+	var player = economy.add_agent("player", "Демидов", true)
+	player.enterprises.clear()
 
 	for cfg in [["Рудник", "rudnik", 3.0], ["Домна", "domna", 2.0], ["Кузница", "kuznitsa", 2.0]]:
 		var e := Enterprise.new(cfg[0], nevyansk, cfg[1], cfg[2])
-		economy.player.enterprises.append(e)
+		player.enterprises.append(e)
 
-	for e in economy.player.enterprises:
+	for e in player.enterprises:
 		var need := int(ceil(e.labor_needed()))
 		var take: int = min(need, e.node.labor_pool[Labor.Type.POSSESSIONAL])
 		e.workers[Labor.Type.POSSESSIONAL] += take
 		e.node.labor_pool[Labor.Type.POSSESSIONAL] -= take
 
-	var domna: Enterprise = economy.player.enterprises[1]
-	var kuznitsa: Enterprise = economy.player.enterprises[2]
-	economy.request_ascribed_workers(domna, 4)
+	var domna: Enterprise = player.enterprises[1]
+	var kuznitsa: Enterprise = player.enterprises[2]
+	economy.request_ascribed_workers(player, domna, 4)
 	economy.set_hired_wage_offer(kuznitsa, 1.8)
 
 	return {
@@ -69,10 +71,12 @@ static func run_logistics(
 	var grain_gap: float = GRAIN_TOPUP - nevyansk.stock[Goods.Good.ZERNO] - grain_in_transit
 	if grain_gap > 0.5:
 		economy.buy_and_dispatch(
-			makarievo, nevyansk, Goods.Good.ZERNO, grain_gap, GRAIN_ROUTE_TICKS
+			economy.player, makarievo, nevyansk, Goods.Good.ZERNO, grain_gap, GRAIN_ROUTE_TICKS
 		)
 
 	if economy.tick_count % 4 == 0:
 		var qty: float = nevyansk.stock[Goods.Good.ZHELEZO]
 		if qty > 0.5:
-			economy.dispatch(nevyansk, moskva, Goods.Good.ZHELEZO, qty, IRON_ROUTE_TICKS, true)
+			economy.dispatch(
+				economy.player, nevyansk, moskva, Goods.Good.ZHELEZO, qty, IRON_ROUTE_TICKS, true
+			)

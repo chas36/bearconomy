@@ -10,6 +10,7 @@ var qty: float
 var remaining_ticks: int
 var total_ticks: int
 var sell_on_arrival: bool
+var owner_id: String
 
 
 func _init(
@@ -18,7 +19,8 @@ func _init(
 	cargo_good: int,
 	cargo_qty: float,
 	travel_ticks: int,
-	should_sell_on_arrival := false
+	should_sell_on_arrival := false,
+	cargo_owner_id := "player"
 ) -> void:
 	origin = origin_node
 	destination = destination_node
@@ -27,6 +29,7 @@ func _init(
 	total_ticks = max(1, travel_ticks)
 	remaining_ticks = total_ticks
 	sell_on_arrival = should_sell_on_arrival
+	owner_id = cargo_owner_id
 
 
 func advance() -> bool:

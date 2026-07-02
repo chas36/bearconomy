@@ -9,46 +9,95 @@ const Enterprise := preload("res://sim/enterprise.gd")
 const Caravan := preload("res://sim/caravan.gd")
 
 
-class Player:
+class Agent:
+	var id: String
+	var display_name: String
+	var is_player: bool
 	var money := 500.0
 	var state_relations := 50.0
 	var enterprises: Array[Enterprise] = []
 
+	func _init(agent_id := "player", agent_name := "Демидов", agent_is_player := true) -> void:
+		id = agent_id
+		display_name = agent_name
+		is_player = agent_is_player
+
 
 var nodes: Array[TradeNode] = []
 var caravans: Array[Caravan] = []
-var player := Player.new()
+var agents: Array[Agent] = []
+var player := Agent.new()
 var tick_count := 0
-var sold_total := {}  # TradeNode -> Good -> float
+var sold_total := {}  # agent_id -> TradeNode -> Good -> float
+
+
+func _init() -> void:
+	agents.append(player)
+
+
+func add_agent(id: String, display_name: String, is_player: bool) -> Agent:
+	var existing := agent_by_id(id)
+	if existing != null:
+		existing.display_name = display_name
+		existing.is_player = is_player
+		if is_player:
+			player = existing
+			agents.erase(existing)
+			agents.insert(0, existing)
+		return existing
+
+	var agent := Agent.new(id, display_name, is_player)
+	if is_player:
+		player = agent
+		agents.insert(0, agent)
+	else:
+		agents.append(agent)
+	return agent
+
+
+func agent_by_id(id: String) -> Agent:
+	for agent in agents:
+		if agent.id == id:
+			return agent
+	return null
+
+
+func all_enterprises() -> Array[Enterprise]:
+	var result: Array[Enterprise] = []
+	for agent in agents:
+		for e in agent.enterprises:
+			result.append(e)
+	return result
 
 
 func tick() -> void:
 	tick_count += 1
 
 	# 1. ПРОИЗВОДСТВО
-	for e in player.enterprises:
-		var r: Dictionary = Recipes.DEFS[e.recipe]
-		var cap := e.effective_capacity()
-		# ограничение по входам
-		for g in r["in"]:
-			var need: float = r["in"][g] * cap
-			if e.node.stock[g] < need:
-				cap *= e.node.stock[g] / max(need, 0.001)
-		# зарплата и содержание
-		var wage_cost := 0.0
-		var grain_need := 0.0
-		for l in e.workers:
-			wage_cost += e.workers[l] * _wage_for(e, l)
-			grain_need += e.workers[l] * Labor.UPKEEP_GRAIN[l]
-		if player.money < wage_cost or e.node.stock[Goods.Good.ZERNO] < grain_need:
-			cap *= 0.5  # голод/безденежье: работаем вполсилы (v0-заглушка)
-		player.money -= wage_cost
-		e.node.stock[Goods.Good.ZERNO] = max(0.0, e.node.stock[Goods.Good.ZERNO] - grain_need)
-		# списываем входы, кладём выходы
-		for g in r["in"]:
-			e.node.stock[g] -= r["in"][g] * cap
-		for g in r["out"]:
-			e.node.stock[g] += r["out"][g] * cap
+	for agent in agents:
+		for e in agent.enterprises:
+			var r: Dictionary = Recipes.DEFS[e.recipe]
+			var cap := e.effective_capacity()
+			# ограничение по входам
+			for g in r["in"]:
+				var need: float = r["in"][g] * cap
+				if e.node.stock[g] < need:
+					cap *= e.node.stock[g] / max(need, 0.001)
+			# зарплата и содержание
+			var wage_cost := 0.0
+			var grain_need := 0.0
+			for l in e.workers:
+				wage_cost += e.workers[l] * _wage_for(e, l)
+				grain_need += e.workers[l] * Labor.UPKEEP_GRAIN[l]
+			if agent.money < wage_cost or e.node.stock[Goods.Good.ZERNO] < grain_need:
+				cap *= 0.5  # голод/безденежье: работаем вполсилы (v0-заглушка)
+			agent.money -= wage_cost
+			e.node.stock[Goods.Good.ZERNO] = max(0.0, e.node.stock[Goods.Good.ZERNO] - grain_need)
+			# списываем входы, кладём выходы
+			for g in r["in"]:
+				e.node.stock[g] -= r["in"][g] * cap
+			for g in r["out"]:
+				e.node.stock[g] += r["out"][g] * cap
 
 	# 2. ПОТРЕБЛЕНИЕ
 	for n in nodes:
@@ -66,50 +115,59 @@ func tick() -> void:
 	_update_labor_market()
 
 
-# Действие игрока: купить товар в узле; вернёт, сколько реально куплено
-func buy(n: TradeNode, g: int, qty: float) -> float:
+# Действие агента: купить товар в узле; вернёт, сколько реально куплено
+func buy(agent: Agent, n: TradeNode, g: int, qty: float) -> float:
 	var p := n.price(g)
 	qty = min(qty, n.stock[g])
 	if p > 0.0:
-		qty = min(qty, player.money / p)
+		qty = min(qty, agent.money / p)
 	n.stock[g] -= qty
-	player.money -= p * qty
+	agent.money -= p * qty
 	if qty > 0.05:
 		print(
 			(
-				"  [СДЕЛКА] Куплено %.1f %s в %s по %.2f (итого %.1f)"
-				% [qty, Goods.NAMES[g], n.name, p, p * qty]
+				"  [СДЕЛКА] %s: куплено %.1f %s в %s по %.2f (итого %.1f)"
+				% [agent.display_name, qty, Goods.NAMES[g], n.name, p, p * qty]
 			)
 		)
 	return qty
 
 
-# Действие игрока: купить товар и сразу отправить его караваном
+# Действие агента: купить товар и сразу отправить его караваном
 func buy_and_dispatch(
-	origin: TradeNode, destination: TradeNode, g: int, qty: float, travel_ticks: int
+	agent: Agent, origin: TradeNode, destination: TradeNode, g: int, qty: float, travel_ticks: int
 ) -> float:
 	var p := origin.price(g)
 	qty = min(qty, origin.stock[g])
 	if p > 0.0:
-		qty = min(qty, player.money / p)
+		qty = min(qty, agent.money / p)
 	if qty <= 0.05:
 		return 0.0
 
 	origin.stock[g] -= qty
-	player.money -= p * qty
-	var caravan := Caravan.new(origin, destination, g, qty, travel_ticks)
+	agent.money -= p * qty
+	var caravan := Caravan.new(origin, destination, g, qty, travel_ticks, false, agent.id)
 	caravans.append(caravan)
 	print(
 		(
-			"  [КАРАВАН] Куплено и отправлено %.1f %s: %s -> %s, путь %d тика (итого %.1f)"
-			% [qty, Goods.NAMES[g], origin.name, destination.name, caravan.total_ticks, p * qty]
+			"  [КАРАВАН] %s: куплено и отправлено %.1f %s: %s -> %s, путь %d тика (итого %.1f)"
+			% [
+				agent.display_name,
+				qty,
+				Goods.NAMES[g],
+				origin.name,
+				destination.name,
+				caravan.total_ticks,
+				p * qty
+			]
 		)
 	)
 	return qty
 
 
-# Действие игрока: отправить товар из узла; при sell_on_arrival груз продаётся в пункте назначения
+# Действие агента: отправить товар из узла; при sell_on_arrival груз продаётся в пункте назначения
 func dispatch(
+	agent: Agent,
 	origin: TradeNode,
 	destination: TradeNode,
 	g: int,
@@ -122,12 +180,19 @@ func dispatch(
 		return 0.0
 
 	origin.stock[g] -= qty
-	var caravan := Caravan.new(origin, destination, g, qty, travel_ticks, sell_on_arrival)
+	var caravan := Caravan.new(origin, destination, g, qty, travel_ticks, sell_on_arrival, agent.id)
 	caravans.append(caravan)
 	print(
 		(
-			"  [КАРАВАН] Отправлено %.1f %s: %s -> %s, путь %d тика"
-			% [qty, Goods.NAMES[g], origin.name, destination.name, caravan.total_ticks]
+			"  [КАРАВАН] %s: отправлено %.1f %s: %s -> %s, путь %d тика"
+			% [
+				agent.display_name,
+				qty,
+				Goods.NAMES[g],
+				origin.name,
+				destination.name,
+				caravan.total_ticks
+			]
 		)
 	)
 	return qty
@@ -146,35 +211,35 @@ func set_hired_wage_offer(e: Enterprise, wage: float) -> void:
 	print("  [ТРУД] %s: ставка наёмным %.2f за тик" % [e.name, e.hired_wage_offer])
 
 
-func request_ascribed_workers(e: Enterprise, qty: int) -> int:
+func request_ascribed_workers(agent: Agent, e: Enterprise, qty: int) -> int:
 	var open_slots := e.open_worker_slots()
-	var max_by_relations := int(floor(player.state_relations / Labor.ASCRIBED_RELATION_COST))
+	var max_by_relations := int(floor(agent.state_relations / Labor.ASCRIBED_RELATION_COST))
 	var granted: int = min(qty, open_slots, max_by_relations)
 	if granted <= 0:
 		return 0
 
 	e.workers[Labor.Type.ASCRIBED] += granted
-	player.state_relations -= granted * Labor.ASCRIBED_RELATION_COST
+	agent.state_relations -= granted * Labor.ASCRIBED_RELATION_COST
 	print(
 		(
-			"  [КАЗНА] Приписано %d работников к %s (связи с казной %.1f)"
-			% [granted, e.name, player.state_relations]
+			"  [КАЗНА] %s: приписано %d работников к %s (связи с казной %.1f)"
+			% [agent.display_name, granted, e.name, agent.state_relations]
 		)
 	)
 	return granted
 
 
-# Действие игрока: продать товар в узле
-func sell(n: TradeNode, g: int, qty: float) -> void:
+# Действие агента: продать товар в узле
+func sell(agent: Agent, n: TradeNode, g: int, qty: float) -> void:
 	qty = min(qty, 999999.0)
 	var p := n.price(g)
 	n.stock[g] += qty
-	player.money += p * qty
-	_record_sale(n, g, qty)
+	agent.money += p * qty
+	_record_sale(agent, n, g, qty)
 	print(
 		(
-			"  [СДЕЛКА] Продано %.1f %s в %s по %.2f (итого %.1f)"
-			% [qty, Goods.NAMES[g], n.name, p, p * qty]
+			"  [СДЕЛКА] %s: продано %.1f %s в %s по %.2f (итого %.1f)"
+			% [agent.display_name, qty, Goods.NAMES[g], n.name, p, p * qty]
 		)
 	)
 
@@ -198,35 +263,41 @@ func _advance_caravans() -> void:
 func _arrive_caravan(c: Caravan) -> void:
 	c.destination.stock[c.good] += c.qty
 	if c.sell_on_arrival:
+		var agent := agent_by_id(c.owner_id)
+		if agent == null:
+			agent = player
 		var p := c.destination.price(c.good)
-		player.money += p * c.qty
-		_record_sale(c.destination, c.good, c.qty)
+		agent.money += p * c.qty
+		_record_sale(agent, c.destination, c.good, c.qty)
 		print(
 			(
-				"  [КАРАВАН] Прибыло и продано %.1f %s в %s по %.2f (итого %.1f)"
-				% [c.qty, Goods.NAMES[c.good], c.destination.name, p, p * c.qty]
+				"  [КАРАВАН] %s: прибыло и продано %.1f %s в %s по %.2f (итого %.1f)"
+				% [agent.display_name, c.qty, Goods.NAMES[c.good], c.destination.name, p, p * c.qty]
 			)
 		)
 	else:
+		var agent := agent_by_id(c.owner_id)
+		var owner_name := agent.display_name if agent != null else c.owner_id
 		print(
 			(
-				"  [КАРАВАН] Прибыло %.1f %s: %s -> %s"
-				% [c.qty, Goods.NAMES[c.good], c.origin.name, c.destination.name]
+				"  [КАРАВАН] %s: прибыло %.1f %s: %s -> %s"
+				% [owner_name, c.qty, Goods.NAMES[c.good], c.origin.name, c.destination.name]
 			)
 		)
 
 
 func _update_labor_market() -> void:
-	for e in player.enterprises:
+	for e in all_enterprises():
 		_release_underpaid_hired(e)
 
 	for n in nodes:
 		_attract_hired_workers(n)
 
-	for e in player.enterprises:
+	for e in all_enterprises():
 		_hire_available_hired(e)
 
-	player.state_relations = min(100.0, player.state_relations + Labor.STATE_RELATION_RECOVERY)
+	for agent in agents:
+		agent.state_relations = min(100.0, agent.state_relations + Labor.STATE_RELATION_RECOVERY)
 
 
 func _release_underpaid_hired(e: Enterprise) -> void:
@@ -276,25 +347,44 @@ func _hire_available_hired(e: Enterprise) -> void:
 
 func _best_open_hired_wage(n: TradeNode) -> float:
 	var best := 0.0
-	for e in player.enterprises:
+	for e in all_enterprises():
 		if e.node == n and e.open_worker_slots() > 0:
 			best = max(best, e.hired_wage_offer)
 	return best
 
 
-func sold_amount(n: TradeNode, g: int) -> float:
-	if not sold_total.has(n):
+func sold_amount(agent: Agent, n: TradeNode, g: int) -> float:
+	if not sold_total.has(agent.id):
 		return 0.0
-	return sold_total[n].get(g, 0.0)
+	if not sold_total[agent.id].has(n):
+		return 0.0
+	return sold_total[agent.id][n].get(g, 0.0)
 
 
-func _record_sale(n: TradeNode, g: int, qty: float) -> void:
-	if not sold_total.has(n):
-		sold_total[n] = {}
-	sold_total[n][g] = sold_total[n].get(g, 0.0) + qty
+func _record_sale(agent: Agent, n: TradeNode, g: int, qty: float) -> void:
+	if not sold_total.has(agent.id):
+		sold_total[agent.id] = {}
+	if not sold_total[agent.id].has(n):
+		sold_total[agent.id][n] = {}
+	sold_total[agent.id][n][g] = sold_total[agent.id][n].get(g, 0.0) + qty
 
 
 func to_save_data() -> Dictionary:
+	var agent_data: Array[Dictionary] = []
+	for agent in agents:
+		(
+			agent_data
+			. append(
+				{
+					"id": agent.id,
+					"name": agent.display_name,
+					"is_player": agent.is_player,
+					"money": agent.money,
+					"state_relations": agent.state_relations,
+				}
+			)
+		)
+
 	var node_data: Array[Dictionary] = []
 	for n in nodes:
 		(
@@ -312,20 +402,22 @@ func to_save_data() -> Dictionary:
 		)
 
 	var enterprise_data: Array[Dictionary] = []
-	for e in player.enterprises:
-		(
-			enterprise_data
-			. append(
-				{
-					"name": e.name,
-					"node": nodes.find(e.node),
-					"recipe": e.recipe,
-					"capacity": e.capacity,
-					"hired_wage_offer": e.hired_wage_offer,
-					"workers": _number_dict_to_save(e.workers),
-				}
+	for agent in agents:
+		for e in agent.enterprises:
+			(
+				enterprise_data
+				. append(
+					{
+						"owner": agent.id,
+						"name": e.name,
+						"node": nodes.find(e.node),
+						"recipe": e.recipe,
+						"capacity": e.capacity,
+						"hired_wage_offer": e.hired_wage_offer,
+						"workers": _number_dict_to_save(e.workers),
+					}
+				)
 			)
-		)
 
 	var caravan_data: Array[Dictionary] = []
 	for c in caravans:
@@ -340,21 +432,28 @@ func to_save_data() -> Dictionary:
 					"remaining_ticks": c.remaining_ticks,
 					"total_ticks": c.total_ticks,
 					"sell_on_arrival": c.sell_on_arrival,
+					"owner": c.owner_id,
 				}
 			)
 		)
 
 	var sales_data: Array[Dictionary] = []
-	for n in sold_total:
-		sales_data.append({"node": nodes.find(n), "goods": _number_dict_to_save(sold_total[n])})
+	for agent_id in sold_total:
+		for n in sold_total[agent_id]:
+			(
+				sales_data
+				. append(
+					{
+						"agent": agent_id,
+						"node": nodes.find(n),
+						"goods": _number_dict_to_save(sold_total[agent_id][n]),
+					}
+				)
+			)
 
 	return {
 		"tick_count": tick_count,
-		"player":
-		{
-			"money": player.money,
-			"state_relations": player.state_relations,
-		},
+		"agents": agent_data,
 		"nodes": node_data,
 		"enterprises": enterprise_data,
 		"caravans": caravan_data,
@@ -364,10 +463,24 @@ func to_save_data() -> Dictionary:
 
 func load_save_data(data: Dictionary) -> void:
 	tick_count = data.get("tick_count", 0)
-	var player_data: Dictionary = data.get("player", {})
-	player.money = player_data.get("money", 500.0)
-	player.state_relations = player_data.get("state_relations", 50.0)
-	player.enterprises.clear()
+	agents.clear()
+	for a_data in data.get("agents", []):
+		var agent := add_agent(
+			a_data.get("id", "player"),
+			a_data.get("name", "Демидов"),
+			a_data.get("is_player", false)
+		)
+		agent.money = a_data.get("money", 500.0)
+		agent.state_relations = a_data.get("state_relations", 50.0)
+		agent.enterprises.clear()
+
+	if agents.is_empty():
+		var fallback := add_agent("player", "Демидов", true)
+		fallback.money = 500.0
+		fallback.state_relations = 50.0
+	elif player == null or not agents.has(player):
+		player = agents[0]
+		player.is_player = true
 
 	nodes.clear()
 	for n_data in data.get("nodes", []):
@@ -381,6 +494,9 @@ func load_save_data(data: Dictionary) -> void:
 
 	for e_data in data.get("enterprises", []):
 		var node_index: int = e_data.get("node", 0)
+		var owner := agent_by_id(e_data.get("owner", "player"))
+		if owner == null:
+			owner = player
 		var e := Enterprise.new(
 			e_data.get("name", "Предприятие"),
 			nodes[node_index],
@@ -389,7 +505,7 @@ func load_save_data(data: Dictionary) -> void:
 		)
 		e.hired_wage_offer = e_data.get("hired_wage_offer", Labor.WAGE[Labor.Type.HIRED])
 		_load_number_dict(e.workers, e_data.get("workers", {}), Labor.Type.values())
-		player.enterprises.append(e)
+		owner.enterprises.append(e)
 
 	caravans.clear()
 	for c_data in data.get("caravans", []):
@@ -399,7 +515,8 @@ func load_save_data(data: Dictionary) -> void:
 			c_data.get("good", Goods.Good.ZERNO),
 			c_data.get("qty", 0.0),
 			c_data.get("total_ticks", 1),
-			c_data.get("sell_on_arrival", false)
+			c_data.get("sell_on_arrival", false),
+			c_data.get("owner", "player")
 		)
 		c.remaining_ticks = c_data.get("remaining_ticks", c.total_ticks)
 		caravans.append(c)
@@ -407,8 +524,11 @@ func load_save_data(data: Dictionary) -> void:
 	sold_total.clear()
 	for s_data in data.get("sold_total", []):
 		var node: TradeNode = nodes[s_data.get("node", 0)]
-		sold_total[node] = {}
-		_load_number_dict(sold_total[node], s_data.get("goods", {}), Goods.Good.values())
+		var agent_id: String = s_data.get("agent", "player")
+		if not sold_total.has(agent_id):
+			sold_total[agent_id] = {}
+		sold_total[agent_id][node] = {}
+		_load_number_dict(sold_total[agent_id][node], s_data.get("goods", {}), Goods.Good.values())
 
 
 func _number_dict_to_save(source: Dictionary) -> Dictionary:

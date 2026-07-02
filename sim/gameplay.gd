@@ -14,7 +14,7 @@ const CONTRACT_TARGET := 16.0
 const CONTRACT_DEADLINE := 18
 const CONTRACT_REWARD := 240.0
 const CONTRACT_PENALTY := 140.0
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2
 const LLM_CONTEXT_VERSION := 1
 const DEFAULT_SAVE_PATH := "user://savegame.json"
 
@@ -34,7 +34,7 @@ var contract_failed := false
 func setup() -> void:
 	scenario = DemoScenario.setup(economy)
 	var moskva: TradeNode = scenario["moskva"]
-	contract_start_sold = economy.sold_amount(moskva, CONTRACT_GOOD)
+	contract_start_sold = economy.sold_amount(economy.player, moskva, CONTRACT_GOOD)
 	_add_notice(
 		"Заказ: поставить %.0f железа в Москву до тика %d." % [CONTRACT_TARGET, CONTRACT_DEADLINE]
 	)
@@ -53,7 +53,7 @@ func advance_tick() -> void:
 
 func contract_progress() -> float:
 	var moskva: TradeNode = scenario["moskva"]
-	return economy.sold_amount(moskva, CONTRACT_GOOD) - contract_start_sold
+	return economy.sold_amount(economy.player, moskva, CONTRACT_GOOD) - contract_start_sold
 
 
 func contract_status_text() -> String:
@@ -136,7 +136,7 @@ func load_from_file(path := DEFAULT_SAVE_PATH) -> bool:
 		_add_notice("Файл сохранения повреждён.")
 		return false
 
-	load_save_data(parsed)
+	load_save_data(_migrate_save(parsed))
 	_add_notice("Игра загружена.")
 	return true
 
@@ -200,6 +200,7 @@ func to_llm_context() -> Dictionary:
 
 
 func load_save_data(data: Dictionary) -> void:
+	data = _migrate_save(data)
 	economy = Economy.new()
 	economy.load_save_data(data.get("economy", {}))
 	scenario = _scenario_from_economy()
@@ -342,6 +343,7 @@ func _apply_event_effect(effect: Dictionary) -> void:
 		var nevyansk: TradeNode = scenario["nevyansk"]
 		var makarievo: TradeNode = scenario["makarievo"]
 		economy.dispatch(
+			economy.player,
 			makarievo,
 			nevyansk,
 			Goods.Good.ZERNO,
@@ -351,6 +353,38 @@ func _apply_event_effect(effect: Dictionary) -> void:
 	if effect.has("makarievo_grain_target"):
 		var makarievo: TradeNode = scenario["makarievo"]
 		makarievo.target_stock[Goods.Good.ZERNO] = effect["makarievo_grain_target"]
+
+
+func _migrate_save(data: Dictionary) -> Dictionary:
+	var version: int = data.get("version", 1)
+	if version >= 2:
+		return data
+
+	var migrated := data.duplicate(true)
+	var economy_data: Dictionary = migrated.get("economy", {})
+	var player_data: Dictionary = economy_data.get("player", {})
+	economy_data["agents"] = [
+		{
+			"id": "player",
+			"name": "Демидов",
+			"is_player": true,
+			"money": player_data.get("money", 500.0),
+			"state_relations": player_data.get("state_relations", 50.0),
+		}
+	]
+
+	for e_data in economy_data.get("enterprises", []):
+		e_data["owner"] = e_data.get("owner", "player")
+
+	for c_data in economy_data.get("caravans", []):
+		c_data["owner"] = c_data.get("owner", "player")
+
+	for s_data in economy_data.get("sold_total", []):
+		s_data["agent"] = s_data.get("agent", "player")
+
+	migrated["economy"] = economy_data
+	migrated["version"] = 2
+	return migrated
 
 
 func _add_notice(text: String) -> void:

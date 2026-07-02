@@ -464,13 +464,15 @@ func _on_good_selected(index: int) -> void:
 
 
 func _on_buy_pressed() -> void:
-	var qty: float = economy.buy(_selected_node(), _selected_good(), float(qty_spin.value))
+	var qty: float = economy.buy(
+		economy.player, _selected_node(), _selected_good(), float(qty_spin.value)
+	)
 	_add_log("Куплено %.1f %s" % [qty, Goods.NAMES[_selected_good()]])
 	_refresh_all()
 
 
 func _on_sell_pressed() -> void:
-	economy.sell(_selected_node(), _selected_good(), float(qty_spin.value))
+	economy.sell(economy.player, _selected_node(), _selected_good(), float(qty_spin.value))
 	_add_log("Продано %.1f %s" % [qty_spin.value, Goods.NAMES[_selected_good()]])
 	_refresh_all()
 
@@ -479,7 +481,12 @@ func _on_send_grain_pressed() -> void:
 	var makarievo: TradeNode = scenario["makarievo"]
 	var nevyansk: TradeNode = scenario["nevyansk"]
 	var qty: float = economy.buy_and_dispatch(
-		makarievo, nevyansk, Goods.Good.ZERNO, float(qty_spin.value), Gameplay.GRAIN_ROUTE_TICKS
+		economy.player,
+		makarievo,
+		nevyansk,
+		Goods.Good.ZERNO,
+		float(qty_spin.value),
+		Gameplay.GRAIN_ROUTE_TICKS
 	)
 	_add_log("Зерно в Невьянск: %.1f" % qty)
 	_refresh_all()
@@ -489,6 +496,7 @@ func _on_send_iron_pressed() -> void:
 	var nevyansk: TradeNode = scenario["nevyansk"]
 	var moskva: TradeNode = scenario["moskva"]
 	var qty: float = economy.dispatch(
+		economy.player,
 		nevyansk,
 		moskva,
 		Goods.Good.ZHELEZO,
@@ -509,7 +517,7 @@ func _on_wage_changed(value: float) -> void:
 
 func _on_ascribed_pressed() -> void:
 	var e := _selected_enterprise()
-	var granted: int = economy.request_ascribed_workers(e, 1)
+	var granted: int = economy.request_ascribed_workers(economy.player, e, 1)
 	_add_log("%s: приписных +%d" % [e.name, granted])
 	_refresh_all()
 
