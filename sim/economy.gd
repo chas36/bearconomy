@@ -140,7 +140,13 @@ func buy(agent: Agent, n: TradeNode, g: int, qty: float) -> float:
 
 # Действие агента: купить товар и сразу отправить его караваном
 func buy_and_dispatch(
-	agent: Agent, origin: TradeNode, destination: TradeNode, g: int, qty: float, travel_ticks: int
+	agent: Agent,
+	origin: TradeNode,
+	destination: TradeNode,
+	g: int,
+	qty: float,
+	travel_ticks: int,
+	sell_on_arrival := false
 ) -> float:
 	var p := origin.price(g)
 	qty = min(qty, origin.stock[g])
@@ -151,7 +157,7 @@ func buy_and_dispatch(
 
 	origin.stock[g] -= qty
 	agent.money -= p * qty
-	var caravan := Caravan.new(origin, destination, g, qty, travel_ticks, false, agent.id)
+	var caravan := Caravan.new(origin, destination, g, qty, travel_ticks, sell_on_arrival, agent.id)
 	caravans.append(caravan)
 	print(
 		(
