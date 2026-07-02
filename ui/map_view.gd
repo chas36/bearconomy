@@ -212,7 +212,7 @@ func _draw_forests() -> void:
 	var ink := Color(UiTheme.COL_INK, 0.30)
 	for cluster in FOREST_CLUSTERS:
 		for offset in TREE_OFFSETS:
-			var base := (cluster + offset) * size
+			var base: Vector2 = (cluster + offset) * size
 			var h := 9.0
 			draw_line(base + Vector2(-4, 0), base + Vector2(0, -h), ink, 1.2, true)
 			draw_line(base + Vector2(0, -h), base + Vector2(4, 0), ink, 1.2, true)
@@ -235,7 +235,7 @@ func _draw_caravans() -> void:
 		var destination_index: int = economy.nodes.find(caravan.destination)
 		if origin_index < 0 or destination_index < 0:
 			continue
-		var progress := 1.0 - float(caravan.remaining_ticks) / caravan.total_ticks
+		var progress: float = 1.0 - float(caravan.remaining_ticks) / float(caravan.total_ticks)
 		var pos := _route_position(origin_index, destination_index, progress)
 		var key := (
 			"%d_%d" % [min(origin_index, destination_index), max(origin_index, destination_index)]

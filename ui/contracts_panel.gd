@@ -64,7 +64,7 @@ func _add_subheader(text: String) -> void:
 func _fill_open_contracts() -> void:
 	_clear_children(_open_box)
 
-	var contracts := gameplay.open_contracts()
+	var contracts: Array = gameplay.open_contracts()
 	if contracts.is_empty():
 		_open_box.add_child(_empty_label("Доска пуста — новые заказы появятся позже."))
 		return
@@ -108,7 +108,7 @@ func _fill_open_contracts() -> void:
 func _fill_active_contracts() -> void:
 	_clear_children(_active_box)
 
-	var contracts := gameplay.player_contracts()
+	var contracts: Array = gameplay.player_contracts()
 	if contracts.is_empty():
 		_active_box.add_child(_empty_label("Дом свободен от обязательств."))
 		return
