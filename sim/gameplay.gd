@@ -7,6 +7,7 @@ const TradeNode := preload("res://sim/trade_node.gd")
 const Enterprise := preload("res://sim/enterprise.gd")
 const Economy := preload("res://sim/economy.gd")
 const DemoScenario := preload("res://sim/demo_scenario.gd")
+const EventCatalog := preload("res://sim/event_catalog.gd")
 
 const CONTRACT_GOOD := Goods.Good.ZHELEZO
 const CONTRACT_TARGET := 16.0
@@ -14,11 +15,9 @@ const CONTRACT_DEADLINE := 18
 const CONTRACT_REWARD := 240.0
 const CONTRACT_PENALTY := 140.0
 const SAVE_VERSION := 1
+const LLM_CONTEXT_VERSION := 1
 const DEFAULT_SAVE_PATH := "user://savegame.json"
 
-const EVENT_STATE_INSPECTION := "state_inspection"
-const EVENT_WORKER_DEMAND := "worker_demand"
-const EVENT_FAIR_SHORTAGE := "fair_shortage"
 const GRAIN_ROUTE_TICKS := DemoScenario.GRAIN_ROUTE_TICKS
 const IRON_ROUTE_TICKS := DemoScenario.IRON_ROUTE_TICKS
 
@@ -85,6 +84,10 @@ func pending_event_choices() -> Array:
 	return pending_event.get("choices", [])
 
 
+func pending_event_tags() -> Array:
+	return pending_event.get("tags", [])
+
+
 func choose_event(choice_index: int) -> void:
 	if pending_event.is_empty():
 		return
@@ -141,6 +144,44 @@ func to_save_data() -> Dictionary:
 	}
 
 
+func to_llm_context() -> Dictionary:
+	return {
+		"schema_version": LLM_CONTEXT_VERSION,
+		"purpose": "narrative_generation_only",
+		"language": "ru",
+		"style_constraints":
+		[
+			"Живой русский язык без клюквы и канцелярита.",
+			"LLM не меняет числа симуляции и не придумывает новые эффекты.",
+			"Ответ должен опираться только на переданные факты, ставки и варианты выбора.",
+		],
+		"world":
+		{
+			"period": "послепетровская Россия, примерно 1725-1800",
+			"themes": ["частный капитал", "казна", "уральские заводы", "ярмарочная логистика"],
+		},
+		"state":
+		{
+			"tick": economy.tick_count,
+			"player_money": economy.player.money,
+			"state_relations": economy.player.state_relations,
+			"contract":
+			{
+				"good": Goods.NAMES[CONTRACT_GOOD],
+				"target": CONTRACT_TARGET,
+				"progress": contract_progress(),
+				"deadline_tick": CONTRACT_DEADLINE,
+				"status": contract_status_text(),
+			},
+			"nodes": _nodes_for_llm(),
+			"enterprises": _enterprises_for_llm(),
+			"caravans": _caravans_for_llm(),
+		},
+		"pending_event": _pending_event_for_llm(),
+		"recent_notices": notices,
+	}
+
+
 func load_save_data(data: Dictionary) -> void:
 	economy = Economy.new()
 	economy.load_save_data(data.get("economy", {}))
@@ -183,12 +224,10 @@ func _check_contract() -> void:
 func _maybe_raise_event() -> void:
 	if has_pending_event():
 		return
-	if economy.tick_count == 5:
-		_raise_event(EVENT_STATE_INSPECTION)
-	if economy.tick_count == 9:
-		_raise_event(EVENT_WORKER_DEMAND)
-	if economy.tick_count == 13:
-		_raise_event(EVENT_FAIR_SHORTAGE)
+	for event_def in EventCatalog.all():
+		if _event_is_available(event_def):
+			_raise_event(event_def["id"])
+			return
 
 
 func _scenario_from_economy() -> Dictionary:
@@ -221,63 +260,50 @@ func _find_enterprise(enterprise_name: String) -> Enterprise:
 func _raise_event(event_id: String) -> void:
 	if completed_event_ids.has(event_id):
 		return
-	if event_id == EVENT_STATE_INSPECTION:
-		pending_event = {
-			"id": event_id,
-			"title": "Казённый смотр",
-			"body": "В Невьянск приехал приказчик. Дар сгладит вопросы к посессионным.",
-			"choices":
-			[
-				{
-					"text": "Дать 45 денег",
-					"effect": {"money": -45.0, "state_relations": 8.0},
-					"result": "Приказчик уехал довольным. Связи с казной укрепились.",
-				},
-				{
-					"text": "Отказать",
-					"effect": {"state_relations": -10.0},
-					"result": "Приказчик запомнил холодный приём.",
-				},
-			],
-		}
-	elif event_id == EVENT_WORKER_DEMAND:
-		pending_event = {
-			"id": event_id,
-			"title": "Слух о больших ставках",
-			"body": "Наёмные на кузнице услышали, что в Верхотурье платят лучше.",
-			"choices":
-			[
-				{
-					"text": "Поднять ставку кузницы",
-					"effect": {"kuznitsa_wage": 2.0},
-					"result": "Кузница подняла ставку. Люди охотнее держатся за место.",
-				},
-				{
-					"text": "Не уступать",
-					"effect": {"kuznitsa_wage": 1.2},
-					"result": "Ставка снижена. Часть людей может уйти после следующего тика.",
-				},
-			],
-		}
-	elif event_id == EVENT_FAIR_SHORTAGE:
-		pending_event = {
-			"id": event_id,
-			"title": "Зерно на ярмарке дорожает",
-			"body": "На Макарьевской ярмарке купцы придерживают зерно до большой воды.",
-			"choices":
-			[
-				{
-					"text": "Закупить сейчас",
-					"effect": {"money": -8.0, "grain_to_nevyansk": 10.0},
-					"result": "Зерно выкуплено и сразу отправлено на завод.",
-				},
-				{
-					"text": "Переждать",
-					"effect": {"makarievo_grain_target": 90.0},
-					"result": "Спрос на ярмарке вырос. Следующие закупки станут дороже.",
-				},
-			],
-		}
+	var event_def := EventCatalog.find(event_id)
+	if event_def.is_empty():
+		return
+	pending_event = event_def.duplicate(true)
+
+
+func _event_is_available(event_def: Dictionary) -> bool:
+	var event_id: String = event_def.get("id", "")
+	if event_id.is_empty() or completed_event_ids.has(event_id):
+		return false
+
+	var trigger: Dictionary = event_def.get("trigger", {})
+	if trigger.has("tick") and economy.tick_count != trigger["tick"]:
+		return false
+	if trigger.has("from_tick") and economy.tick_count < trigger["from_tick"]:
+		return false
+	if trigger.has("until_tick") and economy.tick_count > trigger["until_tick"]:
+		return false
+
+	return _event_conditions_met(event_def.get("conditions", {}))
+
+
+func _event_conditions_met(conditions: Dictionary) -> bool:
+	if conditions.has("min_money") and economy.player.money < conditions["min_money"]:
+		return false
+	if (
+		conditions.has("max_state_relations")
+		and economy.player.state_relations > conditions["max_state_relations"]
+	):
+		return false
+	if (
+		conditions.has("min_state_relations")
+		and economy.player.state_relations < conditions["min_state_relations"]
+	):
+		return false
+	if conditions.has("node_stock_below") and not _node_stock_below(conditions["node_stock_below"]):
+		return false
+	return true
+
+
+func _node_stock_below(rule: Dictionary) -> bool:
+	var node := _find_node(rule.get("node", ""))
+	var good: int = rule.get("good", Goods.Good.ZERNO)
+	return node.stock[good] < rule.get("value", 0.0)
 
 
 func _apply_event_effect(effect: Dictionary) -> void:
@@ -314,3 +340,120 @@ func _add_notice(text: String) -> void:
 	notices.push_front("Тик %d: %s" % [economy.tick_count, text])
 	if notices.size() > 8:
 		notices.resize(8)
+
+
+func _nodes_for_llm() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for n in economy.nodes:
+		var goods_state: Array[Dictionary] = []
+		for g in Goods.Good.values():
+			(
+				goods_state
+				. append(
+					{
+						"good": Goods.NAMES[g],
+						"stock": n.stock[g],
+						"target_stock": n.target_stock[g],
+						"price": n.price(g),
+						"target_price": n.target_price(g),
+						"consumption_per_tick": n.consumption[g],
+						"market_pressure": _market_pressure(n, g),
+					}
+				)
+			)
+		(
+			result
+			. append(
+				{
+					"name": n.name,
+					"goods": goods_state,
+					"available_hired_workers": n.labor_pool[Labor.Type.HIRED],
+				}
+			)
+		)
+	return result
+
+
+func _enterprises_for_llm() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for e in economy.player.enterprises:
+		(
+			result
+			. append(
+				{
+					"name": e.name,
+					"node": e.node.name,
+					"recipe": e.recipe,
+					"capacity": e.capacity,
+					"effective_capacity": e.effective_capacity(),
+					"hired_wage_offer": e.hired_wage_offer,
+					"workers":
+					{
+						Labor.NAMES[Labor.Type.HIRED]: e.workers[Labor.Type.HIRED],
+						Labor.NAMES[Labor.Type.ASCRIBED]: e.workers[Labor.Type.ASCRIBED],
+						Labor.NAMES[Labor.Type.POSSESSIONAL]: e.workers[Labor.Type.POSSESSIONAL],
+					},
+				}
+			)
+		)
+	return result
+
+
+func _caravans_for_llm() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for c in economy.caravans:
+		(
+			result
+			. append(
+				{
+					"origin": c.origin.name,
+					"destination": c.destination.name,
+					"good": Goods.NAMES[c.good],
+					"qty": c.qty,
+					"remaining_ticks": c.remaining_ticks,
+					"sell_on_arrival": c.sell_on_arrival,
+				}
+			)
+		)
+	return result
+
+
+func _pending_event_for_llm() -> Dictionary:
+	if pending_event.is_empty():
+		return {}
+
+	var choices: Array[Dictionary] = []
+	for choice in pending_event.get("choices", []):
+		(
+			choices
+			. append(
+				{
+					"text": choice.get("text", ""),
+					"effect_summary": choice.get("effect_summary", ""),
+					"result_summary": choice.get("result", ""),
+					"llm_hint": choice.get("llm_hint", ""),
+				}
+			)
+		)
+
+	return {
+		"id": pending_event.get("id", ""),
+		"title": pending_event.get("title", ""),
+		"body": pending_event.get("body", ""),
+		"tags": pending_event.get("tags", []),
+		"participants": pending_event.get("participants", []),
+		"location": pending_event.get("location", ""),
+		"stakes": pending_event.get("stakes", ""),
+		"llm_context": pending_event.get("llm_context", {}),
+		"choices": choices,
+	}
+
+
+func _market_pressure(n: TradeNode, g: int) -> String:
+	var target: float = n.target_price(g)
+	var base: float = Goods.BASE_PRICE[g]
+	if target >= base * 1.35:
+		return "shortage"
+	if target <= base * 0.75:
+		return "surplus"
+	return "stable"
