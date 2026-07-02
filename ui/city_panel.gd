@@ -63,6 +63,7 @@ func refresh() -> void:
 
 	_update_trade_preview()
 	_update_travel_label()
+	_update_dispatch_modes()
 	_update_build_preview()
 	_refresh_enterprise_list()
 
@@ -201,12 +202,11 @@ func _build_caravan_box() -> void:
 	_mode_select = OptionButton.new()
 	_mode_select.add_item("Выкупить на рынке и отправить", MODE_BUY_AND_SEND)
 	_mode_select.add_item("Отправить со склада узла", MODE_SEND_FROM_STOCK)
-	_mode_select.item_selected.connect(_on_mode_selected)
+	_mode_select.tooltip_text = "Со склада можно отправлять там, где у дома есть свой завод"
 	add_child(_mode_select)
 
 	_sell_on_arrival = CheckBox.new()
 	_sell_on_arrival.text = "Продать по прибытии"
-	_sell_on_arrival.disabled = true
 	add_child(_sell_on_arrival)
 
 	var send_button := Button.new()
@@ -378,10 +378,21 @@ func _selected_recipe_id() -> String:
 	return BUILD_RECIPE_IDS[_recipe_select.selected]
 
 
-func _on_mode_selected(index: int) -> void:
-	_sell_on_arrival.disabled = index == MODE_BUY_AND_SEND
-	if _sell_on_arrival.disabled:
-		_sell_on_arrival.button_pressed = false
+# Со склада узла может слать только тот, у кого здесь завод: иначе это
+# бесплатный вывоз общего рынка (у v0-симуляции нет личных складов).
+func _player_has_works_here() -> bool:
+	var node = _node()
+	for enterprise in gameplay.economy.player.enterprises:
+		if enterprise.node == node:
+			return true
+	return false
+
+
+func _update_dispatch_modes() -> void:
+	var has_works := _player_has_works_here()
+	_mode_select.set_item_disabled(MODE_SEND_FROM_STOCK, not has_works)
+	if not has_works and _mode_select.selected == MODE_SEND_FROM_STOCK:
+		_mode_select.select(MODE_BUY_AND_SEND)
 
 
 func _on_buy() -> void:
@@ -408,20 +419,18 @@ func _on_send_caravan() -> void:
 	var destination = economy.nodes[_destination_indices[_destination_select.selected]]
 	var good := _selected_good()
 	var ticks := GameText.route_ticks(origin.name, destination.name)
+	var sell: bool = _sell_on_arrival.button_pressed
 	var qty := 0.0
-	if _mode_select.selected == MODE_BUY_AND_SEND:
-		qty = economy.buy_and_dispatch(
-			economy.player, origin, destination, good, float(_qty_spin.value), ticks
+	if _mode_select.selected == MODE_SEND_FROM_STOCK:
+		if not _player_has_works_here():
+			action_performed.emit("Со склада слать нельзя: в %s нет завода дома." % origin.name)
+			return
+		qty = economy.dispatch(
+			economy.player, origin, destination, good, float(_qty_spin.value), ticks, sell
 		)
 	else:
-		qty = economy.dispatch(
-			economy.player,
-			origin,
-			destination,
-			good,
-			float(_qty_spin.value),
-			ticks,
-			_sell_on_arrival.button_pressed
+		qty = economy.buy_and_dispatch(
+			economy.player, origin, destination, good, float(_qty_spin.value), ticks, sell
 		)
 	if qty <= 0.05:
 		action_performed.emit("Обоз не вышел: нет товара или денег.")
