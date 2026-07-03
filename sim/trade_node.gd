@@ -7,6 +7,10 @@ const Labor := preload("res://sim/labor.gd")
 # Доля пути от текущей цены к целевой за один тик
 const PRICE_SMOOTHING := 0.2
 
+# Клампы целевой цены относительно базовой (дефицит/избыток)
+const TARGET_PRICE_CLAMP_MIN := 0.25
+const TARGET_PRICE_CLAMP_MAX := 4.0
+
 var name: String
 var stock := {}  # Good -> float
 var target_stock := {}  # Good -> float (для формулы цены)
@@ -29,7 +33,7 @@ func _init(n: String) -> void:
 # Целевая цена: дефицит/избыток на складе относительно target_stock
 func target_price(g: int) -> float:
 	var ratio: float = target_stock[g] / max(stock[g], 0.1)
-	return Goods.BASE_PRICE[g] * clamp(ratio, 0.25, 4.0)
+	return Goods.BASE_PRICE[g] * clamp(ratio, TARGET_PRICE_CLAMP_MIN, TARGET_PRICE_CLAMP_MAX)
 
 
 # Текущая (сглаженная) цена — по ней идут все сделки

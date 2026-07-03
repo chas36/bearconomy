@@ -43,9 +43,7 @@ func advance_tick() -> void:
 	_drain_contract_notices()
 	_run_ai_controllers()
 	_drain_contract_notices()
-	DemoScenario.run_logistics(
-		economy, scenario["nevyansk"], scenario["makarievo"], scenario["moskva"]
-	)
+	DemoScenario.run_logistics(economy, scenario["nevyansk"], scenario["makarievo"])
 	_maybe_raise_event()
 
 
