@@ -146,6 +146,7 @@ func _build_trade_box() -> void:
 	_good_select = OptionButton.new()
 	for g in Goods.Good.values():
 		_good_select.add_icon_item(UiTheme.good_dot(g), Goods.NAMES[g])
+	_good_select.select(0)
 	_good_select.item_selected.connect(func(_i: int) -> void: refresh())
 	_good_select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(_good_select)
@@ -202,6 +203,7 @@ func _build_caravan_box() -> void:
 	_mode_select = OptionButton.new()
 	_mode_select.add_item("Выкупить на рынке и отправить", MODE_BUY_AND_SEND)
 	_mode_select.add_item("Отправить со склада узла", MODE_SEND_FROM_STOCK)
+	_mode_select.select(MODE_BUY_AND_SEND)
 	_mode_select.tooltip_text = "Со склада можно отправлять там, где у дома есть свой завод"
 	add_child(_mode_select)
 
@@ -225,6 +227,7 @@ func _build_construction_box() -> void:
 	_recipe_select = OptionButton.new()
 	for recipe_id in BUILD_RECIPE_IDS:
 		_recipe_select.add_item(Recipes.DEFS[recipe_id]["display_name"])
+	_recipe_select.select(0)
 	_recipe_select.item_selected.connect(func(_i: int) -> void: refresh())
 	_recipe_select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(_recipe_select)
@@ -371,11 +374,11 @@ func _node():
 
 
 func _selected_good() -> int:
-	return Goods.Good.values()[_good_select.selected]
+	return Goods.Good.values()[max(_good_select.selected, 0)]
 
 
 func _selected_recipe_id() -> String:
-	return BUILD_RECIPE_IDS[_recipe_select.selected]
+	return BUILD_RECIPE_IDS[max(_recipe_select.selected, 0)]
 
 
 # Со склада узла может слать только тот, у кого здесь завод: иначе это
