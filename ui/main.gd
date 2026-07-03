@@ -1,762 +1,293 @@
-# main.gd — минимальный Control UI поверх чистой симуляции
+# main.gd — сборка игрового экрана: планка, карта, вкладки конторы, события
+# UI только читает симуляцию и шлёт команды через публичные API /sim.
 extends Control
 
-const Goods := preload("res://sim/goods.gd")
-const Labor := preload("res://sim/labor.gd")
-const Recipes := preload("res://sim/recipes.gd")
-const TradeNode := preload("res://sim/trade_node.gd")
-const Enterprise := preload("res://sim/enterprise.gd")
 const Gameplay := preload("res://sim/gameplay.gd")
 const OpenRouterNpc := preload("res://game/openrouter_npc.gd")
+const UiTheme := preload("res://ui/ui_theme.gd")
 const MapView := preload("res://ui/map_view.gd")
+const TopBar := preload("res://ui/top_bar.gd")
+const CityPanel := preload("res://ui/city_panel.gd")
+const WorksPanel := preload("res://ui/works_panel.gd")
+const ContractsPanel := preload("res://ui/contracts_panel.gd")
+const JournalPanel := preload("res://ui/journal_panel.gd")
+const EventDialog := preload("res://ui/event_dialog.gd")
 
-const BUILD_RECIPE_IDS := ["rudnik", "domna", "kuznitsa", "melnitsa", "vinokurnya"]
+const SIDE_PANEL_WIDTH := 420.0
+const TAB_CITY := 0
+const TAB_WORKS := 1
+const TAB_CONTRACTS := 2
+const TAB_JOURNAL := 3
 
 var gameplay := Gameplay.new()
-var economy
-var scenario := {}
-var goods: Array = Goods.Good.values()
+var current_speed := 0
+var last_speed := 1
 
-var selected_node_index := 0
-var selected_enterprise_index := 0
-var selected_good_index := 0
-var is_running := false
-
-var tick_timer: Timer
-var header_label: Label
-var money_label: Label
-var node_select: OptionButton
-var enterprise_select: OptionButton
-var good_select: OptionButton
-var qty_spin: SpinBox
-var speed_select: OptionButton
-var play_button: Button
-var contract_label: Label
-var open_contract_box: VBoxContainer
-var active_contract_box: VBoxContainer
-var event_title_label: Label
-var event_body_label: Label
-var event_choice_box: VBoxContainer
-var event_llm_button: Button
-var node_grid: GridContainer
-var enterprise_grid: GridContainer
-var construction_recipe_select: OptionButton
-var possessional_spin: SpinBox
-var construction_box: VBoxContainer
-var caravan_box: VBoxContainer
-var log_label: Label
-var wage_spin: SpinBox
-var map_view: MapView
-var log_lines: Array[String] = []
+var _tick_timer: Timer
+var _top_bar: TopBar
+var _map_view: MapView
+var _city_panel: CityPanel
+var _works_panel: WorksPanel
+var _contracts_panel: ContractsPanel
+var _journal_panel: JournalPanel
+var _event_dialog: EventDialog
+var _tab_buttons: Array[Button] = []
+var _tab_panels: Array[Control] = []
+var _status_label: Label
+var _counts_label: Label
+var _last_money := 0.0
 
 
 func _ready() -> void:
 	gameplay.setup()
-	_sync_from_gameplay()
+	_last_money = gameplay.economy.player.money
+
+	theme = UiTheme.build()
 	_build_ui()
 	_refresh_all()
 
-	tick_timer = Timer.new()
-	tick_timer.timeout.connect(_on_tick_timer_timeout)
-	add_child(tick_timer)
+	_tick_timer = Timer.new()
+	_tick_timer.timeout.connect(_advance_tick)
+	add_child(_tick_timer)
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_SPACE and not gameplay.has_pending_event():
+			_set_speed(last_speed if current_speed == 0 else 0)
+			_top_bar.show_speed(current_speed)
 
 
 func _build_ui() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 
+	var background := ColorRect.new()
+	background.color = UiTheme.COL_BG
+	background.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(background)
+
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 16)
-	margin.add_theme_constant_override("margin_top", 16)
-	margin.add_theme_constant_override("margin_right", 16)
-	margin.add_theme_constant_override("margin_bottom", 16)
+	for side in ["margin_left", "margin_top", "margin_right", "margin_bottom"]:
+		margin.add_theme_constant_override(side, 10)
 	add_child(margin)
 
 	var page := VBoxContainer.new()
-	page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	page.add_theme_constant_override("separation", 10)
+	page.add_theme_constant_override("separation", 8)
 	margin.add_child(page)
 
-	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 12)
-	page.add_child(header)
+	_top_bar = TopBar.new()
+	_top_bar.step_pressed.connect(_advance_tick)
+	_top_bar.speed_selected.connect(_set_speed)
+	_top_bar.save_pressed.connect(_on_save)
+	_top_bar.load_pressed.connect(_on_load)
+	page.add_child(_top_bar)
 
-	header_label = Label.new()
-	header_label.text = "Демидов"
-	header_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(header_label)
+	var center := HBoxContainer.new()
+	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	center.add_theme_constant_override("separation", 8)
+	page.add_child(center)
 
-	money_label = Label.new()
-	header.add_child(money_label)
+	_map_view = MapView.new()
+	_map_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_map_view.setup(gameplay.economy)
+	_map_view.node_clicked.connect(_on_map_node_clicked)
+	center.add_child(_map_view)
 
-	var controls := HBoxContainer.new()
-	controls.add_theme_constant_override("separation", 8)
-	header.add_child(controls)
+	center.add_child(_build_side_panel())
+	page.add_child(_build_status_bar())
 
-	var step_button := Button.new()
-	step_button.text = "Тик"
-	step_button.pressed.connect(_on_step_pressed)
-	controls.add_child(step_button)
-
-	play_button = Button.new()
-	play_button.text = "Пуск"
-	play_button.pressed.connect(_on_play_pressed)
-	controls.add_child(play_button)
-
-	speed_select = OptionButton.new()
-	speed_select.add_item("1/с", 1)
-	speed_select.add_item("2/с", 2)
-	speed_select.add_item("4/с", 4)
-	speed_select.selected = 0
-	speed_select.item_selected.connect(_on_speed_selected)
-	controls.add_child(speed_select)
-
-	var save_button := Button.new()
-	save_button.text = "Сохранить"
-	save_button.pressed.connect(_on_save_pressed)
-	controls.add_child(save_button)
-
-	var load_button := Button.new()
-	load_button.text = "Загрузить"
-	load_button.pressed.connect(_on_load_pressed)
-	controls.add_child(load_button)
-
-	contract_label = Label.new()
-	contract_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	page.add_child(contract_label)
-
-	map_view = MapView.new()
-	map_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	map_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	map_view.size_flags_stretch_ratio = 1.5
-	map_view.custom_minimum_size.y = 260
-	map_view.node_clicked.connect(_on_map_node_clicked)
-	page.add_child(map_view)
-
-	var columns := HBoxContainer.new()
-	columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	columns.size_flags_stretch_ratio = 1.0
-	columns.add_theme_constant_override("separation", 10)
-	page.add_child(columns)
-
-	var left := _add_panel(columns, "Узел")
-	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	node_select = OptionButton.new()
-	for n in economy.nodes:
-		node_select.add_item(n.name)
-	node_select.item_selected.connect(_on_node_selected)
-	left.add_child(node_select)
-
-	node_grid = GridContainer.new()
-	node_grid.columns = 4
-	node_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left.add_child(node_grid)
-
-	var trade_row := HBoxContainer.new()
-	trade_row.add_theme_constant_override("separation", 8)
-	left.add_child(trade_row)
-
-	good_select = OptionButton.new()
-	for g in goods:
-		good_select.add_item(Goods.NAMES[g])
-	good_select.item_selected.connect(_on_good_selected)
-	trade_row.add_child(good_select)
-
-	qty_spin = SpinBox.new()
-	qty_spin.min_value = 1.0
-	qty_spin.max_value = 100.0
-	qty_spin.step = 1.0
-	qty_spin.value = 5.0
-	qty_spin.custom_minimum_size.x = 90
-	trade_row.add_child(qty_spin)
-
-	var buy_button := Button.new()
-	buy_button.text = "Купить"
-	buy_button.pressed.connect(_on_buy_pressed)
-	trade_row.add_child(buy_button)
-
-	var sell_button := Button.new()
-	sell_button.text = "Продать"
-	sell_button.pressed.connect(_on_sell_pressed)
-	trade_row.add_child(sell_button)
-
-	var logistics_row := HBoxContainer.new()
-	logistics_row.add_theme_constant_override("separation", 8)
-	left.add_child(logistics_row)
-
-	var grain_button := Button.new()
-	grain_button.text = "Зерно на завод"
-	grain_button.pressed.connect(_on_send_grain_pressed)
-	logistics_row.add_child(grain_button)
-
-	var iron_button := Button.new()
-	iron_button.text = "Железо в Москву"
-	iron_button.pressed.connect(_on_send_iron_pressed)
-	logistics_row.add_child(iron_button)
-
-	var construction_row := HBoxContainer.new()
-	construction_row.add_theme_constant_override("separation", 8)
-	left.add_child(construction_row)
-
-	construction_recipe_select = OptionButton.new()
-	for recipe_id in BUILD_RECIPE_IDS:
-		construction_recipe_select.add_item(Recipes.DEFS[recipe_id]["display_name"])
-	construction_row.add_child(construction_recipe_select)
-
-	possessional_spin = SpinBox.new()
-	possessional_spin.min_value = 0.0
-	possessional_spin.max_value = 10.0
-	possessional_spin.step = 1.0
-	possessional_spin.value = 2.0
-	possessional_spin.custom_minimum_size.x = 80
-	construction_row.add_child(possessional_spin)
-
-	var build_button := Button.new()
-	build_button.text = "Построить"
-	build_button.pressed.connect(_on_build_pressed)
-	construction_row.add_child(build_button)
-
-	var middle := _add_panel(columns, "Предприятие")
-	middle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	enterprise_select = OptionButton.new()
-	for e in economy.player.enterprises:
-		enterprise_select.add_item(e.name)
-	enterprise_select.item_selected.connect(_on_enterprise_selected)
-	middle.add_child(enterprise_select)
-
-	enterprise_grid = GridContainer.new()
-	enterprise_grid.columns = 2
-	enterprise_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	middle.add_child(enterprise_grid)
-
-	var wage_row := HBoxContainer.new()
-	wage_row.add_theme_constant_override("separation", 8)
-	middle.add_child(wage_row)
-
-	var wage_label := Label.new()
-	wage_label.text = "Ставка"
-	wage_row.add_child(wage_label)
-
-	wage_spin = SpinBox.new()
-	wage_spin.min_value = 0.5
-	wage_spin.max_value = 4.0
-	wage_spin.step = 0.1
-	wage_spin.value_changed.connect(_on_wage_changed)
-	wage_spin.custom_minimum_size.x = 100
-	wage_row.add_child(wage_spin)
-
-	var ascribed_button := Button.new()
-	ascribed_button.text = "Просить приписных"
-	ascribed_button.pressed.connect(_on_ascribed_pressed)
-	middle.add_child(ascribed_button)
-
-	var expand_button := Button.new()
-	expand_button.text = "Расширить +1"
-	expand_button.pressed.connect(_on_expand_pressed)
-	middle.add_child(expand_button)
-
-	var right := _add_panel(columns, "Ход")
-	right.custom_minimum_size.x = 280
-
-	var contract_title := Label.new()
-	contract_title.text = "Заказы"
-	right.add_child(contract_title)
-
-	open_contract_box = VBoxContainer.new()
-	open_contract_box.add_theme_constant_override("separation", 6)
-	right.add_child(open_contract_box)
-
-	active_contract_box = VBoxContainer.new()
-	active_contract_box.add_theme_constant_override("separation", 4)
-	right.add_child(active_contract_box)
-
-	var contract_separator := HSeparator.new()
-	right.add_child(contract_separator)
-
-	event_title_label = Label.new()
-	right.add_child(event_title_label)
-
-	event_body_label = Label.new()
-	event_body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	right.add_child(event_body_label)
-
-	event_llm_button = Button.new()
-	event_llm_button.text = "LLM-описание"
-	event_llm_button.pressed.connect(_on_event_llm_pressed)
-	right.add_child(event_llm_button)
-
-	event_choice_box = VBoxContainer.new()
-	event_choice_box.add_theme_constant_override("separation", 6)
-	right.add_child(event_choice_box)
-
-	var event_separator := HSeparator.new()
-	right.add_child(event_separator)
-
-	construction_box = VBoxContainer.new()
-	right.add_child(construction_box)
-
-	var construction_separator := HSeparator.new()
-	right.add_child(construction_separator)
-
-	caravan_box = VBoxContainer.new()
-	right.add_child(caravan_box)
-
-	var separator := HSeparator.new()
-	right.add_child(separator)
-
-	log_label = Label.new()
-	log_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	log_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	right.add_child(log_label)
+	_event_dialog = EventDialog.new()
+	_event_dialog.choice_made.connect(_on_event_choice)
+	_event_dialog.llm_requested.connect(_on_event_llm)
+	add_child(_event_dialog)
 
 
-func _add_panel(parent: Container, title: String) -> VBoxContainer:
-	var panel := PanelContainer.new()
-	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	parent.add_child(panel)
+func _build_side_panel() -> Control:
+	var side := VBoxContainer.new()
+	side.custom_minimum_size.x = SIDE_PANEL_WIDTH
+	side.add_theme_constant_override("separation", 0)
 
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 10)
-	margin.add_theme_constant_override("margin_top", 10)
-	margin.add_theme_constant_override("margin_right", 10)
-	margin.add_theme_constant_override("margin_bottom", 10)
-	panel.add_child(margin)
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 2)
+	side.add_child(tabs)
 
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 8)
-	margin.add_child(box)
+	_city_panel = CityPanel.new()
+	_works_panel = WorksPanel.new()
+	_contracts_panel = ContractsPanel.new()
+	_journal_panel = JournalPanel.new()
+	for panel in [_city_panel, _works_panel, _contracts_panel, _journal_panel]:
+		panel.setup(gameplay)
+	_city_panel.node_selected.connect(_on_city_node_selected)
+	for panel in [_city_panel, _works_panel, _contracts_panel]:
+		panel.action_performed.connect(_on_panel_action)
+	_tab_panels.assign([_city_panel, _works_panel, _contracts_panel, _journal_panel])
 
-	var title_label := Label.new()
-	title_label.text = title
-	box.add_child(title_label)
-	return box
+	var group := ButtonGroup.new()
+	var captions := ["Город", "Заводы", "Заказы", "Летопись"]
+	for i in range(captions.size()):
+		var button := Button.new()
+		button.text = captions[i]
+		button.theme_type_variation = "TabButton"
+		button.toggle_mode = true
+		button.button_group = group
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.pressed.connect(_on_tab_selected.bind(i))
+		tabs.add_child(button)
+		_tab_buttons.append(button)
+
+	var holder := PanelContainer.new()
+	holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	side.add_child(holder)
+
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	holder.add_child(scroll)
+
+	var stack := VBoxContainer.new()
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(stack)
+	for panel in _tab_panels:
+		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		stack.add_child(panel)
+
+	_tab_buttons[TAB_CITY].button_pressed = true
+	_on_tab_selected(TAB_CITY)
+	return side
+
+
+func _build_status_bar() -> Control:
+	var bar := PanelContainer.new()
+	bar.theme_type_variation = "StatusPanel"
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	bar.add_child(row)
+
+	_status_label = Label.new()
+	_status_label.theme_type_variation = "DimLabel"
+	_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_status_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	row.add_child(_status_label)
+
+	_counts_label = Label.new()
+	_counts_label.theme_type_variation = "SmallDimLabel"
+	row.add_child(_counts_label)
+	return bar
 
 
 func _refresh_all() -> void:
-	header_label.text = "Демидов | тик %d" % economy.tick_count
-	money_label.text = (
-		"Деньги %.1f | Казна %.1f" % [economy.player.money, economy.player.state_relations]
+	var economy = gameplay.economy
+	_top_bar.set_state(economy, economy.player.money - _last_money)
+	_last_money = economy.player.money
+
+	_map_view.refresh()
+	for panel in _tab_panels:
+		panel.refresh()
+
+	var open_count: int = _contracts_panel.open_count()
+	_tab_buttons[TAB_CONTRACTS].text = ("Заказы (%d)" % open_count if open_count > 0 else "Заказы")
+	_counts_label.text = (
+		"Обозов в пути: %d · Строек: %d"
+		% [economy.caravans.size(), economy.construction_queue.size()]
 	)
-	contract_label.text = gameplay.contract_status_text()
-	map_view.selected_node_index = selected_node_index
-	map_view.refresh(economy)
-	_refresh_enterprise_select()
-	_refresh_node_panel()
-	_refresh_enterprise_panel()
-	_refresh_contracts()
-	_refresh_event_panel()
-	_refresh_construction()
-	_refresh_caravans()
-	log_label.text = _joined_log_text()
-
-
-func _sync_from_gameplay() -> void:
-	economy = gameplay.economy
-	scenario = gameplay.scenario
-
-
-func _refresh_event_panel() -> void:
-	_clear_children(event_choice_box)
-	if not gameplay.has_pending_event():
-		event_title_label.text = "Событий нет"
-		event_body_label.text = ""
-		event_llm_button.disabled = true
-		return
-
-	event_title_label.text = gameplay.pending_event_title()
-	event_body_label.text = gameplay.pending_event_body()
-	event_llm_button.disabled = false
-	var choices := gameplay.pending_event_choices()
-	for i in range(choices.size()):
-		var choice: Dictionary = choices[i]
-		var button := Button.new()
-		button.text = choice["text"]
-		button.pressed.connect(_on_event_choice_pressed.bind(i))
-		event_choice_box.add_child(button)
-
-
-func _refresh_contracts() -> void:
-	_clear_children(open_contract_box)
-	_clear_children(active_contract_box)
-
-	var open_contracts := gameplay.open_contracts()
-	if open_contracts.is_empty():
-		var empty_open := Label.new()
-		empty_open.text = "Открытых заказов нет"
-		open_contract_box.add_child(empty_open)
-	else:
-		for c in open_contracts:
-			var row := HBoxContainer.new()
-			row.add_theme_constant_override("separation", 6)
-			open_contract_box.add_child(row)
-
-			var label := Label.new()
-			label.text = gameplay.contract_line(c)
-			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			row.add_child(label)
-
-			var accept_button := Button.new()
-			accept_button.text = "Взять"
-			accept_button.pressed.connect(_on_accept_contract_pressed.bind(c["id"]))
-			row.add_child(accept_button)
-
-			var decline_button := Button.new()
-			decline_button.text = "Отказ"
-			decline_button.pressed.connect(_on_decline_contract_pressed.bind(c["id"]))
-			row.add_child(decline_button)
-
-	var active_contracts := gameplay.player_contracts()
-	if active_contracts.is_empty():
-		var empty_active := Label.new()
-		empty_active.text = "Активных заказов нет"
-		active_contract_box.add_child(empty_active)
-		return
-
-	for c in active_contracts:
-		var label := Label.new()
-		label.text = gameplay.contract_line(c)
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		active_contract_box.add_child(label)
-
-
-func _refresh_node_panel() -> void:
-	_clear_children(node_grid)
-	_add_grid_label(node_grid, "Товар")
-	_add_grid_label(node_grid, "Склад")
-	_add_grid_label(node_grid, "Цель")
-	_add_grid_label(node_grid, "Цена")
-
-	var node := _selected_node()
-	for g in goods:
-		_add_grid_label(node_grid, Goods.NAMES[g])
-		_add_grid_label(node_grid, "%.1f" % node.stock[g])
-		_add_grid_label(node_grid, "%.1f" % node.target_stock[g])
-		_add_grid_label(node_grid, "%.2f" % node.price(g))
-
-	_add_grid_label(node_grid, "Наёмные")
-	_add_grid_label(node_grid, "%d" % node.labor_pool[Labor.Type.HIRED])
-	_add_grid_label(node_grid, "")
-	_add_grid_label(node_grid, "")
-
-
-func _refresh_enterprise_panel() -> void:
-	_clear_children(enterprise_grid)
-	var e := _selected_enterprise()
-	wage_spin.set_value_no_signal(e.hired_wage_offer)
-
-	_add_grid_label(enterprise_grid, "Узел")
-	_add_grid_label(enterprise_grid, e.node.name)
-	_add_grid_label(enterprise_grid, "Мощность")
-	_add_grid_label(enterprise_grid, "%.1f" % e.effective_capacity())
-	_add_grid_label(enterprise_grid, "Штат")
-	_add_grid_label(enterprise_grid, "%d/%d" % [e.worker_count(), int(ceil(e.labor_needed()))])
-	_add_grid_label(enterprise_grid, "Наёмные")
-	_add_grid_label(enterprise_grid, "%d" % e.workers[Labor.Type.HIRED])
-	_add_grid_label(enterprise_grid, "Приписные")
-	_add_grid_label(enterprise_grid, "%d" % e.workers[Labor.Type.ASCRIBED])
-	_add_grid_label(enterprise_grid, "Посессионные")
-	_add_grid_label(enterprise_grid, "%d" % e.workers[Labor.Type.POSSESSIONAL])
-
-
-func _refresh_enterprise_select() -> void:
-	var current_count := enterprise_select.item_count
-	if current_count == economy.player.enterprises.size():
-		return
-
-	selected_enterprise_index = min(
-		selected_enterprise_index, economy.player.enterprises.size() - 1
-	)
-	enterprise_select.clear()
-	for e in economy.player.enterprises:
-		enterprise_select.add_item(e.name)
-	enterprise_select.select(selected_enterprise_index)
-
-
-func _refresh_construction() -> void:
-	_clear_children(construction_box)
-	var title := Label.new()
-	title.text = "Стройки"
-	construction_box.add_child(title)
-
-	if economy.construction_queue.is_empty():
-		var empty := Label.new()
-		empty.text = "Очередь пуста"
-		construction_box.add_child(empty)
-		return
-
-	for c in economy.construction_queue:
-		var label := Label.new()
-		if c.expand_target != null:
-			label.text = "%s: +%.1f, %d т." % [c.expand_target.name, c.capacity, c.remaining_ticks]
-		else:
-			label.text = (
-				"%s в %s: %.1f, %d т."
-				% [c.display_name, c.node.name, c.capacity, c.remaining_ticks]
-			)
-		construction_box.add_child(label)
-
-
-func _refresh_caravans() -> void:
-	_clear_children(caravan_box)
-	if economy.caravans.is_empty():
-		var empty := Label.new()
-		empty.text = "Караванов нет"
-		caravan_box.add_child(empty)
-		return
-
-	for c in economy.caravans:
-		var label := Label.new()
-		label.text = (
-			"%s -> %s: %.1f %s, %d т."
-			% [c.origin.name, c.destination.name, c.qty, Goods.NAMES[c.good], c.remaining_ticks]
-		)
-		caravan_box.add_child(label)
-
-
-func _clear_children(node: Node) -> void:
-	for child in node.get_children():
-		if child is CanvasItem:
-			child.visible = false
-		if not child.is_queued_for_deletion():
-			child.queue_free()
-
-
-func _add_grid_label(grid: GridContainer, text: String) -> void:
-	var label := Label.new()
-	label.text = text
-	grid.add_child(label)
-
-
-func _selected_node() -> TradeNode:
-	selected_node_index = min(selected_node_index, economy.nodes.size() - 1)
-	return economy.nodes[selected_node_index]
-
-
-func _selected_enterprise() -> Enterprise:
-	selected_enterprise_index = min(
-		selected_enterprise_index, economy.player.enterprises.size() - 1
-	)
-	return economy.player.enterprises[selected_enterprise_index]
-
-
-func _selected_good() -> int:
-	return int(goods[selected_good_index])
+	if not gameplay.notices.is_empty() and _status_label.text == "":
+		_status_label.text = gameplay.notices[0]
 
 
 func _advance_tick() -> void:
 	if gameplay.has_pending_event():
-		_add_log("Сначала выберите решение события.")
-		_refresh_all()
+		_set_speed(0)
+		_top_bar.show_speed(0)
+		_show_pending_event()
 		return
 	gameplay.advance_tick()
-	_add_log("Тик %d" % economy.tick_count)
+	if not gameplay.notices.is_empty():
+		_status_label.text = gameplay.notices[0]
 	if gameplay.has_pending_event():
-		is_running = false
-		play_button.text = "Пуск"
-		tick_timer.stop()
+		_set_speed(0)
+		_top_bar.show_speed(0)
+		_show_pending_event()
 	_refresh_all()
 
 
-func _add_log(text: String) -> void:
-	log_lines.push_front(text)
-	if log_lines.size() > 8:
-		log_lines.resize(8)
+func _show_pending_event() -> void:
+	_event_dialog.show_event(gameplay.pending_event)
 
 
-func _joined_log_text() -> String:
-	var lines: Array[String] = []
-	for notice in gameplay.notices:
-		lines.append(notice)
-	for line in log_lines:
-		lines.append(line)
-	if lines.size() > 10:
-		lines.resize(10)
-	return "\n".join(lines)
+func _set_speed(ticks_per_second: int) -> void:
+	current_speed = ticks_per_second
+	if ticks_per_second <= 0:
+		_tick_timer.stop()
+		return
+	last_speed = ticks_per_second
+	_tick_timer.wait_time = 1.0 / ticks_per_second
+	_tick_timer.start()
 
 
-func _on_step_pressed() -> void:
-	_advance_tick()
-
-
-func _on_play_pressed() -> void:
-	is_running = not is_running
-	play_button.text = "Пауза" if is_running else "Пуск"
-	if is_running:
-		_update_timer_speed()
-		tick_timer.start()
-	else:
-		tick_timer.stop()
-
-
-func _on_speed_selected(_index: int) -> void:
-	_update_timer_speed()
-
-
-func _update_timer_speed() -> void:
-	var ticks_per_second: int = max(1, speed_select.get_selected_id())
-	tick_timer.wait_time = 1.0 / float(ticks_per_second)
-	if is_running:
-		tick_timer.start()
-
-
-func _on_tick_timer_timeout() -> void:
-	_advance_tick()
-
-
-func _on_node_selected(index: int) -> void:
-	selected_node_index = index
-	_refresh_all()
+func _select_node(index: int) -> void:
+	_map_view.selected_index = index
+	_city_panel.set_node_index(index)
+	_map_view.refresh()
 
 
 func _on_map_node_clicked(index: int) -> void:
-	selected_node_index = index
-	node_select.select(index)
+	_select_node(index)
+	_tab_buttons[TAB_CITY].button_pressed = true
+	_on_tab_selected(TAB_CITY)
+
+
+func _on_city_node_selected(index: int) -> void:
+	_select_node(index)
+
+
+func _on_tab_selected(index: int) -> void:
+	for i in range(_tab_panels.size()):
+		_tab_panels[i].visible = i == index
+
+
+func _on_panel_action(message: String) -> void:
+	_status_label.text = message
+	_journal_panel.add_line(message)
 	_refresh_all()
 
 
-func _on_enterprise_selected(index: int) -> void:
-	selected_enterprise_index = index
+func _on_event_choice(index: int) -> void:
+	gameplay.choose_event(index)
+	if not gameplay.notices.is_empty():
+		_status_label.text = gameplay.notices[0]
 	_refresh_all()
 
 
-func _on_good_selected(index: int) -> void:
-	selected_good_index = index
-
-
-func _on_buy_pressed() -> void:
-	var qty: float = economy.buy(
-		economy.player, _selected_node(), _selected_good(), float(qty_spin.value)
-	)
-	_add_log("Куплено %.1f %s" % [qty, Goods.NAMES[_selected_good()]])
-	_refresh_all()
-
-
-func _on_sell_pressed() -> void:
-	economy.sell(economy.player, _selected_node(), _selected_good(), float(qty_spin.value))
-	_add_log("Продано %.1f %s" % [qty_spin.value, Goods.NAMES[_selected_good()]])
-	_refresh_all()
-
-
-func _on_send_grain_pressed() -> void:
-	var makarievo: TradeNode = scenario["makarievo"]
-	var nevyansk: TradeNode = scenario["nevyansk"]
-	var qty: float = economy.buy_and_dispatch(
-		economy.player,
-		makarievo,
-		nevyansk,
-		Goods.Good.ZERNO,
-		float(qty_spin.value),
-		Gameplay.GRAIN_ROUTE_TICKS
-	)
-	_add_log("Зерно в Невьянск: %.1f" % qty)
-	_refresh_all()
-
-
-func _on_send_iron_pressed() -> void:
-	var nevyansk: TradeNode = scenario["nevyansk"]
-	var moskva: TradeNode = scenario["moskva"]
-	var qty: float = economy.dispatch(
-		economy.player,
-		nevyansk,
-		moskva,
-		Goods.Good.ZHELEZO,
-		nevyansk.stock[Goods.Good.ZHELEZO],
-		Gameplay.IRON_ROUTE_TICKS,
-		true
-	)
-	_add_log("Железо в Москву: %.1f" % qty)
-	_refresh_all()
-
-
-func _on_wage_changed(value: float) -> void:
-	var e := _selected_enterprise()
-	economy.set_hired_wage_offer(e, value)
-	_add_log("%s: ставка %.2f" % [e.name, value])
-	_refresh_all()
-
-
-func _on_ascribed_pressed() -> void:
-	var e := _selected_enterprise()
-	var granted: int = economy.request_ascribed_workers(economy.player, e, 1)
-	_add_log("%s: приписных +%d" % [e.name, granted])
-	_refresh_all()
-
-
-func _on_build_pressed() -> void:
-	var recipe_id: String = BUILD_RECIPE_IDS[construction_recipe_select.selected]
-	var ok: bool = economy.start_construction(
-		economy.player, _selected_node(), recipe_id, 1.0, int(possessional_spin.value)
-	)
-	_add_log("Стройка начата." if ok else "Стройка не начата: не хватает денег.")
-	_refresh_all()
-
-
-func _on_expand_pressed() -> void:
-	var e := _selected_enterprise()
-	var ok: bool = economy.expand_enterprise(economy.player, e, 1.0)
-	_add_log(("%s: расширение начато." % e.name) if ok else "Расширение не начато.")
-	_refresh_all()
-
-
-func _on_event_choice_pressed(choice_index: int) -> void:
-	gameplay.choose_event(choice_index)
-	_refresh_all()
-
-
-func _on_accept_contract_pressed(contract_id: int) -> void:
-	var ok := gameplay.accept_contract(contract_id)
-	_add_log("Заказ взят." if ok else "Заказ уже недоступен.")
-	_refresh_all()
-
-
-func _on_decline_contract_pressed(contract_id: int) -> void:
-	var ok := gameplay.decline_contract(contract_id)
-	_add_log("Заказ снят с доски." if ok else "Заказ уже недоступен.")
-	_refresh_all()
-
-
-func _on_event_llm_pressed() -> void:
+func _on_event_llm() -> void:
 	if not gameplay.has_pending_event():
 		return
-	event_llm_button.disabled = true
-	event_llm_button.text = "Запрос..."
-	_refresh_all()
+	_event_dialog.set_llm_busy(true)
 
 	var client := OpenRouterNpc.new()
 	var result := client.generate_event_text(gameplay.to_llm_context())
 	if result.get("ok", false):
 		gameplay.set_pending_event_narrative(result["text"])
-		_add_log("LLM: описание обновлено (%s)." % result.get("model", "model"))
+		_event_dialog.set_body_text(gameplay.pending_event_body())
+		_journal_panel.add_line("Летописец переписал событие (%s)." % result.get("model", "модель"))
 	else:
-		_add_log("LLM: %s" % result.get("error", "не удалось получить описание"))
-
-	event_llm_button.text = "LLM-описание"
-	event_llm_button.disabled = false
-	_refresh_all()
+		_journal_panel.add_line("Летописец молчит: %s" % result.get("error", "нет ответа"))
+	_event_dialog.set_llm_busy(false)
 
 
-func _on_save_pressed() -> void:
-	if gameplay.save_to_file():
-		_add_log("Сохранено.")
-	else:
-		_add_log("Сохранение не удалось.")
-	_refresh_all()
+func _on_save() -> void:
+	var message := "Игра сохранена." if gameplay.save_to_file() else "Сохранение не удалось."
+	_on_panel_action(message)
 
 
-func _on_load_pressed() -> void:
-	if gameplay.load_from_file():
-		_sync_from_gameplay()
-		selected_node_index = min(selected_node_index, economy.nodes.size() - 1)
-		selected_enterprise_index = min(
-			selected_enterprise_index, economy.player.enterprises.size() - 1
-		)
-		_add_log("Загружено.")
-	else:
-		_add_log("Загрузка не удалась.")
+func _on_load() -> void:
+	if not gameplay.load_from_file():
+		_on_panel_action("Загрузка не удалась.")
+		return
+	_map_view.setup(gameplay.economy)
+	_select_node(min(_city_panel.node_index, gameplay.economy.nodes.size() - 1))
+	_status_label.text = "Игра загружена."
+	_journal_panel.add_line("Игра загружена.")
+	if gameplay.has_pending_event():
+		_show_pending_event()
 	_refresh_all()
