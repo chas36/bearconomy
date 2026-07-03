@@ -1,0 +1,49 @@
+# CI: линт/формат GDScript + headless-проверки ядра на настоящем Godot.
+# Для агентной разработки это единственный способ верифицировать /sim,
+# когда локальный бинарь Godot недоступен.
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  GODOT_VERSION: 4.7-stable
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: pre-commit (гигиена + gdlint/gdformat)
+        run: |
+          pip install pre-commit
+          pre-commit run --all-files --show-diff-on-failure
+
+  headless:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Установить Godot ${{ env.GODOT_VERSION }}
+        run: |
+          curl -sSL -o godot.zip \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          unzip -q godot.zip
+          sudo mv "Godot_v${GODOT_VERSION}_linux.x86_64" /usr/local/bin/godot
+          godot --version
+      - name: Импорт ресурсов проекта
+        run: godot --headless --import || true
+      - name: Регресс-проверки ядра
+        run: godot --headless --script tests/headless_checks.gd
+      - name: Демо-прогон ядра
+        run: |
+          godot --headless --script econ_core.gd 2>&1 | tee econ.log
+          ! grep -q "SCRIPT ERROR" econ.log
+      - name: Смоук главной сцены
+        run: |
+          godot --headless --path . --quit-after 1 2>&1 | tee smoke.log
+          ! grep -q "SCRIPT ERROR" smoke.log
