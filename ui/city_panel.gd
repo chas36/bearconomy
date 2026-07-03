@@ -381,8 +381,9 @@ func _selected_recipe_id() -> String:
 	return BUILD_RECIPE_IDS[max(_recipe_select.selected, 0)]
 
 
-# Со склада узла может слать только тот, у кого здесь завод: иначе это
-# бесплатный вывоз общего рынка (у v0-симуляции нет личных складов).
+# v0-заглушка: у симуляции нет личных складов, запас узла общий.
+# Guard «нужен свой завод в узле» лишь прикрывает бесплатный вывоз рынка;
+# честное решение — инвентарь агента в /sim (см. docs/roadmap-history.md).
 func _player_has_works_here() -> bool:
 	var node = _node()
 	for enterprise in gameplay.economy.player.enterprises:
