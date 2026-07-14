@@ -14,32 +14,6 @@ var _choice_box: VBoxContainer
 var _llm_button: Button
 
 
-class WaxSeal:
-	extends Control
-
-	func _init() -> void:
-		custom_minimum_size = Vector2(52, 52)
-
-	func _draw() -> void:
-		var center := size * 0.5
-		var radius: float = min(size.x, size.y) * 0.5 - 2.0
-		draw_circle(center + Vector2(1, 2), radius, Color(0, 0, 0, 0.25))
-		draw_circle(center, radius, UiTheme.COL_SEAL)
-		draw_circle(
-			center + Vector2(-radius * 0.3, -radius * 0.35), radius * 0.25, Color(1, 1, 1, 0.10)
-		)
-		draw_arc(center, radius * 0.72, 0, TAU, 40, Color(0, 0, 0, 0.30), 1.5, true)
-		draw_string(
-			UiTheme.font_bold(),
-			center + Vector2(-radius, radius * 0.45),
-			"Д",
-			HORIZONTAL_ALIGNMENT_CENTER,
-			radius * 2.0,
-			int(radius * 1.1),
-			Color("e8d7b0", 0.9)
-		)
-
-
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -123,7 +97,7 @@ func _build() -> void:
 	_location_label.theme_type_variation = "InkDimLabel"
 	head_text.add_child(_location_label)
 
-	head.add_child(WaxSeal.new())
+	head.add_child(UiTheme.WaxSeal.new())
 
 	var rule := ColorRect.new()
 	rule.color = Color(UiTheme.COL_INK, 0.5)

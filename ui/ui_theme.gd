@@ -37,8 +37,38 @@ const GOOD_COLORS := {
 	Goods.Good.VODKA: Color("9fb7c4"),
 }
 
+const COL_BRASS_INK := Color("7a5c1e")  # латунь для акцентов на пергаменте
+
 static var _fonts := {}
 static var _textures := {}
+
+
+# Сургучная печать с вензелем «Д» — фолбэк, когда нет chrome/seal.png
+class WaxSeal:
+	extends Control
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(52, 52)
+
+	func _draw() -> void:
+		var center := size * 0.5
+		var radius: float = min(size.x, size.y) * 0.5 - 2.0
+		draw_circle(center + Vector2(1, 2), radius, Color(0, 0, 0, 0.25))
+		draw_circle(center, radius, COL_SEAL)
+		draw_circle(
+			center + Vector2(-radius * 0.3, -radius * 0.35), radius * 0.25, Color(1, 1, 1, 0.10)
+		)
+		draw_arc(center, radius * 0.72, 0, TAU, 40, Color(0, 0, 0, 0.30), 1.5, true)
+		# Вложенный класс не видит статик-функции скрипта — шрифт из темы
+		draw_string(
+			get_theme_default_font(),
+			center + Vector2(-radius, radius * 0.45),
+			"Д",
+			HORIZONTAL_ALIGNMENT_CENTER,
+			radius * 2.0,
+			int(radius * 1.1),
+			Color("e8d7b0", 0.9)
+		)
 
 
 static func font_regular() -> Font:
@@ -101,6 +131,76 @@ static func build() -> Theme:
 	_setup_panels(theme)
 	_setup_inputs(theme)
 	_setup_misc(theme)
+	return theme
+
+
+# Тема панелей-бумаг: те же имена вариаций, но чернила на пергаменте.
+# Присваивается корню бумаги — дочерние панели наследуют её автоматически.
+static func build_paper() -> Theme:
+	var theme := Theme.new()
+	theme.default_font = font_regular()
+	theme.default_font_size = 16
+
+	theme.set_color("font_color", "Label", COL_INK)
+	_label_variation(theme, "TitleLabel", font_bold(), 21, COL_INK)
+	_label_variation(theme, "HeaderLabel", font_bold(), 18, COL_INK)
+	_label_variation(theme, "SubHeaderLabel", font_bold(), 16, COL_BRASS_INK)
+	_label_variation(theme, "DimLabel", font_regular(), 14, COL_INK_SOFT)
+	_label_variation(theme, "SmallDimLabel", font_regular(), 13, COL_INK_SOFT)
+	_label_variation(theme, "ValueLabel", font_bold(), 16, COL_BRASS_INK)
+	_label_variation(theme, "InkLabel", font_regular(), 16, COL_INK)
+	_label_variation(theme, "InkDimLabel", font_italic(), 14, COL_INK_SOFT)
+	_label_variation(theme, "InkTitleLabel", font_bold(), 22, COL_INK)
+
+	for type_name in ["Button", "OptionButton", "CheckBox", "MenuButton"]:
+		theme.set_stylebox("normal", type_name, _flat(COL_PARCHMENT_DARK, COL_INK_SOFT, 1, 3, 6.0))
+		theme.set_stylebox("hover", type_name, _flat(Color("bda478"), COL_INK, 1, 3, 6.0))
+		theme.set_stylebox("pressed", type_name, _flat(Color("ab9268"), COL_INK, 1, 3, 6.0))
+		theme.set_stylebox(
+			"disabled",
+			type_name,
+			_flat(Color(COL_PARCHMENT_DARK, 0.5), Color(COL_INK_SOFT, 0.4), 1, 3, 6.0)
+		)
+		theme.set_stylebox("focus", type_name, StyleBoxEmpty.new())
+		theme.set_color("font_color", type_name, COL_INK)
+		theme.set_color("font_hover_color", type_name, Color("241708"))
+		theme.set_color("font_pressed_color", type_name, Color("241708"))
+		theme.set_color("font_disabled_color", type_name, Color(COL_INK_SOFT, 0.55))
+
+	theme.set_type_variation("AccentButton", "Button")
+	theme.set_stylebox("normal", "AccentButton", _flat(Color("6d5626"), COL_INK_SOFT, 1, 3, 6.0))
+	theme.set_stylebox("hover", "AccentButton", _flat(Color("83682e"), COL_INK, 1, 3, 6.0))
+	theme.set_stylebox("pressed", "AccentButton", _flat(Color("57451f"), COL_INK, 1, 3, 6.0))
+	theme.set_font("font", "AccentButton", font_bold())
+	theme.set_color("font_color", "AccentButton", COL_TEXT_BRIGHT)
+
+	theme.set_stylebox(
+		"panel", "PanelContainer", _flat(Color(COL_PARCHMENT_DARK, 0.45), COL_INK_SOFT, 1, 3, 8.0)
+	)
+	theme.set_type_variation("CardPanel", "PanelContainer")
+	theme.set_stylebox(
+		"panel", "CardPanel", _flat(Color(COL_PARCHMENT_DARK, 0.6), COL_INK_SOFT, 1, 3, 8.0)
+	)
+
+	theme.set_stylebox("normal", "LineEdit", _flat(Color("cbb58c"), COL_INK_SOFT, 1, 3, 5.0))
+	theme.set_stylebox("focus", "LineEdit", _flat(Color("cbb58c"), COL_INK, 1, 3, 5.0))
+	theme.set_color("font_color", "LineEdit", COL_INK)
+	theme.set_color("caret_color", "LineEdit", COL_INK)
+
+	theme.set_stylebox("background", "ProgressBar", _flat(Color("cbb58c"), COL_INK_SOFT, 1, 2, 1.0))
+	theme.set_stylebox("fill", "ProgressBar", _flat(COL_BRASS_INK, COL_BRASS_INK, 0, 2, 1.0))
+	theme.set_color("font_color", "ProgressBar", COL_INK)
+
+	theme.set_stylebox("panel", "PopupMenu", _flat(COL_PARCHMENT, COL_INK_SOFT, 1, 3, 4.0))
+	theme.set_stylebox(
+		"hover", "PopupMenu", _flat(Color(COL_INK, 0.12), Color(0, 0, 0, 0), 0, 2, 2.0)
+	)
+	theme.set_color("font_color", "PopupMenu", COL_INK)
+	theme.set_color("font_hover_color", "PopupMenu", Color("241708"))
+
+	var separator := StyleBoxLine.new()
+	separator.color = Color(COL_INK, 0.45)
+	theme.set_stylebox("separator", "HSeparator", separator)
 	return theme
 
 
