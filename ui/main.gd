@@ -8,11 +8,20 @@ const UiTheme := preload("res://ui/ui_theme.gd")
 const MapView := preload("res://ui/map_view.gd")
 const CityScreen := preload("res://ui/city_screen.gd")
 const TopBar := preload("res://ui/top_bar.gd")
-const CityPanel := preload("res://ui/city_panel.gd")
-const WorksPanel := preload("res://ui/works_panel.gd")
+const MarketPaper := preload("res://ui/papers/market_paper.gd")
+const CaravanPaper := preload("res://ui/papers/caravan_paper.gd")
+const WorksPaper := preload("res://ui/papers/works_paper.gd")
 const ContractsPanel := preload("res://ui/contracts_panel.gd")
 const JournalPanel := preload("res://ui/journal_panel.gd")
 const EventDialog := preload("res://ui/event_dialog.gd")
+const PaperPanel := preload("res://ui/paper_panel.gd")
+
+const PAPER_TITLES := {
+	"market": "Торговые ряды",
+	"works": "Заводская контора",
+	"contracts": "Приказная доска",
+	"caravans": "Ямской двор",
+}
 
 const TOP_BAR_HEIGHT := 48.0
 const STATUS_BAR_HEIGHT := 30.0
@@ -25,11 +34,13 @@ var _tick_timer: Timer
 var _top_bar: TopBar
 var _map_view: MapView
 var _city_screen: CityScreen
-var _city_panel: CityPanel
-var _works_panel: WorksPanel
+var _market_paper: MarketPaper
+var _caravan_paper: CaravanPaper
+var _works_paper: WorksPaper
 var _contracts_panel: ContractsPanel
 var _journal_panel: JournalPanel
 var _event_dialog: EventDialog
+var _paper_panel: PaperPanel
 var _panel_store: Control
 var _status_label: Label
 var _counts_label: Label
@@ -91,28 +102,35 @@ func _build_ui() -> void:
 
 	add_child(_build_status_bar())
 
+	_paper_panel = PaperPanel.new()
+	add_child(_paper_panel)
+
 	_event_dialog = EventDialog.new()
 	_event_dialog.choice_made.connect(_on_event_choice)
 	_event_dialog.llm_requested.connect(_on_event_llm)
 	add_child(_event_dialog)
 
 
-# v0-заглушка: панели живут скрытыми, пока не переедут в бумаги города
+# Склад бумаг: контент живёт скрытым, paper_panel забирает его на показ
 func _build_panel_store() -> void:
 	_panel_store = Control.new()
 	_panel_store.visible = false
 	add_child(_panel_store)
 
-	_city_panel = CityPanel.new()
-	_works_panel = WorksPanel.new()
+	_market_paper = MarketPaper.new()
+	_caravan_paper = CaravanPaper.new()
+	_works_paper = WorksPaper.new()
 	_contracts_panel = ContractsPanel.new()
 	_journal_panel = JournalPanel.new()
-	for panel in [_city_panel, _works_panel, _contracts_panel, _journal_panel]:
+	for panel in _all_papers():
 		panel.setup(gameplay)
 		_panel_store.add_child(panel)
-	_city_panel.node_selected.connect(_select_node)
-	for panel in [_city_panel, _works_panel, _contracts_panel]:
+	for panel in [_market_paper, _caravan_paper, _works_paper, _contracts_panel]:
 		panel.action_performed.connect(_on_panel_action)
+
+
+func _all_papers() -> Array:
+	return [_market_paper, _caravan_paper, _works_paper, _contracts_panel, _journal_panel]
 
 
 func _build_status_bar() -> Control:
@@ -145,7 +163,7 @@ func _refresh_all() -> void:
 	_map_view.refresh()
 	if _city_screen.visible:
 		_city_screen.refresh()
-	for panel in [_city_panel, _works_panel, _contracts_panel, _journal_panel]:
+	for panel in _all_papers():
 		panel.refresh()
 
 	_counts_label.text = (
@@ -188,7 +206,8 @@ func _set_speed(ticks_per_second: int) -> void:
 
 func _select_node(index: int) -> void:
 	_map_view.selected_index = index
-	_city_panel.set_node_index(index)
+	for paper in [_market_paper, _caravan_paper, _works_paper]:
+		paper.set_node_index(index)
 	_map_view.refresh()
 
 
@@ -203,8 +222,21 @@ func _on_city_back() -> void:
 	_map_view.show()
 
 
-func _on_paper_requested(_paper_id: String) -> void:
-	pass  # v0-заглушка: бумаги города подключаются следующей задачей
+func _on_paper_requested(paper_id: String) -> void:
+	var paper: Control
+	match paper_id:
+		"market":
+			paper = _market_paper
+		"works":
+			paper = _works_paper
+		"contracts":
+			paper = _contracts_panel
+		"caravans":
+			paper = _caravan_paper
+		_:
+			return
+	var node_name: String = gameplay.economy.nodes[_map_view.selected_index].name
+	_paper_panel.open("%s — %s" % [PAPER_TITLES[paper_id], node_name], paper)
 
 
 func _on_panel_action(message: String) -> void:
@@ -247,8 +279,9 @@ func _on_load() -> void:
 		return
 	_map_view.setup(gameplay.economy)
 	_city_screen.setup(gameplay.economy)
+	_paper_panel.close()
 	_on_city_back()
-	_select_node(min(_city_panel.node_index, gameplay.economy.nodes.size() - 1))
+	_select_node(min(_market_paper.node_index, gameplay.economy.nodes.size() - 1))
 	_status_label.text = "Игра загружена."
 	_journal_panel.add_line("Игра загружена.")
 	if gameplay.has_pending_event():

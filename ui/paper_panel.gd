@@ -132,7 +132,8 @@ func _paper_stylebox() -> StyleBox:
 	# Однородный центр листа начинается с ~25% от краёв (см. asset-brief)
 	var margin := frame.get_width() * 0.25
 	box.set_texture_margin_all(margin)
-	box.set_content_margin_all(36.0)
+	# Поля с запасом: угловые орнаменты рамки не должны попадать под текст
+	box.set_content_margin_all(56.0)
 	return box
 
 

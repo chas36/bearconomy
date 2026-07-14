@@ -71,6 +71,34 @@ func _build() -> void:
 
 	add_child(_build_title_plate())
 	add_child(_build_back_button())
+	add_child(_build_temp_actions())
+
+
+# v0-заглушка: временный ряд кнопок, пока нет кликабельных зданий
+func _build_temp_actions() -> Control:
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	margin.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	margin.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	margin.add_theme_constant_override("margin_bottom", 44)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	margin.add_child(row)
+
+	var actions := [
+		["market", "Торговые ряды"],
+		["works", "Контора"],
+		["contracts", "Заказы"],
+		["caravans", "Ямской двор"],
+	]
+	for action in actions:
+		var button := Button.new()
+		button.text = action[1]
+		var paper_id: String = action[0]
+		button.pressed.connect(func() -> void: paper_requested.emit(paper_id))
+		row.add_child(button)
+	return margin
 
 
 func _build_title_plate() -> Control:
