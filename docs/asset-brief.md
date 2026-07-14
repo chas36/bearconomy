@@ -168,29 +168,67 @@
 > character, three-quarter turn, dark neutral engraved background,
 > serious face with individual features, hands visible.
 
-По 1 генерации на файл; вариации внутри роли делай разными лицами
-(возраст, борода, худоба) — модель сама разнообразит, если попросить
-«a different person than before».
+Важно: описание роли и реквизита модель усредняет в один и тот же
+типаж — «нарисуй другого человека» не помогает. Поэтому у КАЖДОГО файла
+свой промпт с контрастным физическим типажом: возраст числом,
+телосложение, борода/волосы, черты, поворот головы. Описание человека
+ставь ПЕРЕД реквизитом роли.
 
-- `portraits/podyachy_1.png`, `podyachy_2.png` — «…A podyachy
-  government clerk: ink-stained fingers, a quill behind the ear, a
-  bundle of paper scrolls pressed to the chest, a plain dark kaftan,
-  sly tired eyes.»
-- `portraits/kupets_1.png`, `kupets_2.png`, `kupets_3.png` — «…A
-  bearded Russian merchant: a fur-trimmed coat over a kaftan, a heavy
-  money pouch in one hand, confident well-fed face.»
-- `portraits/prikazchik_1.png`, `prikazchik_2.png` — «…A factory
-  steward (prikazchik): a practical plain kaftan, a tally board and
-  keys at the belt, sharp attentive face.»
-- `portraits/master_1.png`, `master_2.png` — «…A foundry master
-  craftsman: a leather apron over a linen shirt, soot on the hands and
-  brow, strong forearms, calm proud face.»
-- `portraits/starosta_1.png`, `starosta_2.png` — «…A village elder
-  (starosta): a grey beard, a simple homespun coat, a walking staff,
-  weathered patient face.»
-- `portraits/officer_1.png` — «…A Petrine army officer: a green
-  European-style uniform coat with brass buttons, a tricorn hat under
-  the arm, powdered wig, stern face.»
+Подьячие (реквизит: ink-stained fingers, a quill behind the ear, a
+bundle of paper scrolls, a plain dark kaftan):
+
+- `portraits/podyachy_1.png` — «…A gaunt young man of about 25, hollow
+  cheeks, clean-shaven, lank dark hair falling over the forehead,
+  nervous darting eyes, head turned slightly left. Role props: …»
+- `portraits/podyachy_2.png` — «…A corpulent bald man of about 55 with
+  a doughy face, small round wire spectacles on a bulbous nose, sparse
+  grey side-whiskers, drowsy cunning expression, head turned slightly
+  right. Role props: …»
+
+Купцы (реквизит: a fur-trimmed coat over a kaftan, a heavy money pouch
+in one hand):
+
+- `portraits/kupets_1.png` — «…A burly barrel-chested man of about 40,
+  thick black spade-shaped beard, heavy brows, ruddy wind-burnt face,
+  confident stare straight at the viewer. Role props: …»
+- `portraits/kupets_2.png` — «…A lean wiry man of about 50, sharp
+  hawk-like nose, thin red-grey beard, weathered creased skin, one
+  eyebrow raised in appraisal, head turned left. Role props: …»
+- `portraits/kupets_3.png` — «…A heavy old man of about 65, long white
+  patriarch beard down to the chest, broad flat face, small shrewd
+  eyes almost hidden in wrinkles, head turned right. Role props: …»
+- `portraits/prikazchik_1.png` — «…A fit middle-aged man of about 45,
+  short neat dark beard with first grey, deep vertical crease between
+  the brows, tight jaw, direct demanding gaze. Role props: a practical
+  plain kaftan, a tally board and keys at the belt.»
+- `portraits/prikazchik_2.png` — «…A very young man of about 22,
+  clean-shaven, prominent ears, alert wide eyes, light brown hair cut
+  round, eager slightly anxious posture, head turned left. Role props:
+  a practical plain kaftan, a tally board and keys at the belt.»
+- `portraits/master_1.png` — «…A bald heavyset man of about 60 with a
+  huge drooping grey moustache and no beard, burn scars on one cheek,
+  thick neck, calm heavy-lidded eyes. Role props: a leather apron over
+  a linen shirt, soot on the hands and brow.»
+- `portraits/master_2.png` — «…A broad-shouldered young man of about
+  30, curly black hair and short dense black beard, straight thick
+  brows, proud lifted chin, head turned right. Role props: a leather
+  apron over a linen shirt, soot on the hands and brow.»
+- `portraits/starosta_1.png` — «…A thin dry old man of about 70, long
+  narrow white beard, sunken cheeks, kind tired eyes under bushy white
+  brows, slight stoop. Role props: a simple homespun coat, a walking
+  staff.»
+- `portraits/starosta_2.png` — «…A stocky round-faced man of about 50,
+  short broad grey-streaked beard, snub nose, patient sceptical
+  half-smile, head turned left. Role props: a simple homespun coat, a
+  walking staff.»
+- `portraits/officer_1.png` — «…A rigid upright man of about 35, long
+  face with a thin dark moustache and no beard, powdered wig, cold
+  grey eyes. Role props: a green European-style uniform coat with
+  brass buttons, a tricorn hat under the arm.»
+
+Если два портрета всё равно вышли похожими — добавь контраст ещё по
+одной оси (другой поворот головы, другой источник света слева/справа)
+и перегенери один из них.
 
 ## Хром интерфейса
 
