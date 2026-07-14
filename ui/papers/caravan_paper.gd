@@ -52,7 +52,7 @@ func _build() -> void:
 
 	_good_select = OptionButton.new()
 	for g in Goods.Good.values():
-		_good_select.add_icon_item(UiTheme.good_dot(g), Goods.NAMES[g])
+		_good_select.add_icon_item(UiTheme.good_icon(g), Goods.NAMES[g])
 	_good_select.select(0)
 	_good_select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	goods_row.add_child(_good_select)

@@ -3,6 +3,7 @@
 extends RefCounted
 
 const Goods := preload("res://sim/goods.gd")
+const GenAssets := preload("res://ui/gen_assets.gd")
 
 const FONT_DIR := "res://ui/assets/fonts"
 
@@ -38,6 +39,15 @@ const GOOD_COLORS := {
 }
 
 const COL_BRASS_INK := Color("7a5c1e")  # латунь для акцентов на пергаменте
+
+const GOOD_ICON_KEYS := {
+	Goods.Good.RUDA: "ruda",
+	Goods.Good.CHUGUN: "chugun",
+	Goods.Good.ZHELEZO: "zhelezo",
+	Goods.Good.ZERNO: "zerno",
+	Goods.Good.MUKA: "muka",
+	Goods.Good.VODKA: "vodka",
+}
 
 static var _fonts := {}
 static var _textures := {}
@@ -95,6 +105,12 @@ static func good_dot(good: int, diameter := 12) -> Texture2D:
 			_circle_image(diameter, GOOD_COLORS[good], COL_INK)
 		)
 	return _textures[key]
+
+
+# Гравюрная иконка товара из gen-ассетов; фолбэк — цветной кружок
+static func good_icon(good: int, diameter := 12) -> Texture2D:
+	var asset := GenAssets.texture("goods/%s.png" % GOOD_ICON_KEYS[good])
+	return asset if asset != null else good_dot(good, diameter)
 
 
 static func owner_dot(is_player: bool, diameter := 10) -> Texture2D:
@@ -166,6 +182,7 @@ static func build_paper() -> Theme:
 		theme.set_color("font_hover_color", type_name, Color("241708"))
 		theme.set_color("font_pressed_color", type_name, Color("241708"))
 		theme.set_color("font_disabled_color", type_name, Color(COL_INK_SOFT, 0.55))
+		theme.set_constant("icon_max_width", type_name, 20)
 
 	theme.set_type_variation("AccentButton", "Button")
 	theme.set_stylebox("normal", "AccentButton", _flat(Color("6d5626"), COL_INK_SOFT, 1, 3, 6.0))
@@ -195,6 +212,7 @@ static func build_paper() -> Theme:
 	theme.set_stylebox(
 		"hover", "PopupMenu", _flat(Color(COL_INK, 0.12), Color(0, 0, 0, 0), 0, 2, 2.0)
 	)
+	theme.set_constant("icon_max_width", "PopupMenu", 20)
 	theme.set_color("font_color", "PopupMenu", COL_INK)
 	theme.set_color("font_hover_color", "PopupMenu", Color("241708"))
 
@@ -242,6 +260,7 @@ static func _setup_buttons(theme: Theme) -> void:
 		theme.set_color("font_hover_color", type_name, COL_TEXT_BRIGHT)
 		theme.set_color("font_pressed_color", type_name, COL_GOLD)
 		theme.set_color("font_disabled_color", type_name, Color(COL_TEXT_DIM, 0.55))
+		theme.set_constant("icon_max_width", type_name, 20)
 
 	# Главные действия — латунная кнопка
 	theme.set_type_variation("AccentButton", "Button")
@@ -314,6 +333,7 @@ static func _setup_inputs(theme: Theme) -> void:
 static func _setup_misc(theme: Theme) -> void:
 	theme.set_stylebox("panel", "PopupMenu", _flat(COL_PANEL_DARK, COL_BORDER, 1, 3, 4.0))
 	theme.set_stylebox("hover", "PopupMenu", _flat(COL_PANEL_LIGHT, Color(0, 0, 0, 0), 0, 2, 2.0))
+	theme.set_constant("icon_max_width", "PopupMenu", 20)
 	theme.set_color("font_color", "PopupMenu", COL_TEXT)
 	theme.set_color("font_hover_color", "PopupMenu", COL_TEXT_BRIGHT)
 

@@ -74,8 +74,10 @@ func _build_market_grid() -> void:
 		var name_box := HBoxContainer.new()
 		name_box.add_theme_constant_override("separation", 6)
 		var icon := TextureRect.new()
-		icon.texture = UiTheme.good_dot(g)
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+		icon.texture = UiTheme.good_icon(g)
+		icon.custom_minimum_size = Vector2(20, 20)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		name_box.add_child(icon)
 		var name_label := Label.new()
 		name_label.text = Goods.NAMES[g]
@@ -109,7 +111,7 @@ func _build_trade_box() -> void:
 
 	_good_select = OptionButton.new()
 	for g in Goods.Good.values():
-		_good_select.add_icon_item(UiTheme.good_dot(g), Goods.NAMES[g])
+		_good_select.add_icon_item(UiTheme.good_icon(g), Goods.NAMES[g])
 	_good_select.select(0)
 	_good_select.item_selected.connect(func(_i: int) -> void: refresh())
 	_good_select.size_flags_horizontal = Control.SIZE_EXPAND_FILL

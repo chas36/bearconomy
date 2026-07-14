@@ -156,8 +156,10 @@ func _card_base(contract: Dictionary) -> PanelContainer:
 	body.add_child(head)
 
 	var icon := TextureRect.new()
-	icon.texture = UiTheme.good_dot(contract["good"])
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+	icon.texture = UiTheme.good_icon(contract["good"])
+	icon.custom_minimum_size = Vector2(24, 24)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	head.add_child(icon)
 
 	var destination = gameplay.economy.nodes[contract["destination_index"]]
