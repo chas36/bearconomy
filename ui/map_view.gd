@@ -1,5 +1,6 @@
-# map_view.gd — чертёж торговых путей: пергамент, реки, узлы, обозы
+# map_view.gd — карта путей: гравюра-фон или чертёж-фолбэк, узлы, обозы
 # Только читает состояние экономики; команды идут через сигнал node_clicked.
+# Раскладка узлов — ui/map_layout.gd, ассеты — ui/assets/gen (с фолбэком).
 extends Control
 
 signal node_clicked(index: int)
@@ -8,23 +9,14 @@ const Goods := preload("res://sim/goods.gd")
 const Labor := preload("res://sim/labor.gd")
 const UiTheme := preload("res://ui/ui_theme.gd")
 const GameText := preload("res://ui/game_text.gd")
+const GenAssets := preload("res://ui/gen_assets.gd")
+const MapLayout := preload("res://ui/map_layout.gd")
 
 const NODE_RADIUS := 15.0
-const HIT_RADIUS := 28.0
-
-# Нормированные координаты известных узлов (запад -> восток)
-const NODE_POS := {
-	"Москва": Vector2(0.14, 0.68),
-	"Макарьево": Vector2(0.46, 0.54),
-	"Невьянск": Vector2(0.85, 0.30),
-}
-
-const NODE_KIND := {"Москва": "capital", "Макарьево": "fair", "Невьянск": "works"}
-const NODE_SUBTITLE := {
-	"Москва": "столица",
-	"Макарьево": "ярмарка",
-	"Невьянск": "заводы",
-}
+const HIT_RADIUS := 34.0
+const MARKER_SIZE := 76.0
+const CARAVAN_WIDTH := 48.0
+const MAP_ASPECT := 16.0 / 9.0
 
 const RIVER_VOLGA := [
 	Vector2(0.40, 0.02),
@@ -103,17 +95,37 @@ func _notification(what: int) -> void:
 
 
 func _draw() -> void:
-	_draw_parchment()
-	_draw_rivers()
-	_draw_ridge()
-	_draw_forests()
+	draw_rect(Rect2(Vector2.ZERO, size), UiTheme.COL_BG)
+	var background := GenAssets.texture("map/map_background.png")
+	if background != null:
+		draw_texture_rect(background, _map_rect(), false)
+	else:
+		_draw_parchment()
+		_draw_rivers()
+		_draw_ridge()
+		_draw_forests()
+		_draw_compass()
+		_draw_frame()
 	if economy != null:
 		_draw_routes()
 		_draw_caravans()
 		_draw_nodes()
-	_draw_compass()
 	_draw_cartouche()
-	_draw_frame()
+
+
+# Кадр карты: 16:9, вписан в контрол по центру (letterbox)
+func _map_rect() -> Rect2:
+	var frame := size
+	if frame.x / max(frame.y, 1.0) > MAP_ASPECT:
+		frame = Vector2(frame.y * MAP_ASPECT, frame.y)
+	else:
+		frame = Vector2(frame.x, frame.x / MAP_ASPECT)
+	return Rect2((size - frame) * 0.5, frame)
+
+
+func _norm_to_px(normalized: Vector2) -> Vector2:
+	var rect := _map_rect()
+	return rect.position + normalized * rect.size
 
 
 func _update_hover(mouse_pos: Vector2) -> void:
@@ -145,8 +157,9 @@ func _node_tooltip(index: int) -> String:
 
 func _node_center(index: int) -> Vector2:
 	var node = economy.nodes[index]
-	var normalized: Vector2 = NODE_POS.get(node.name, _fallback_pos(index))
-	return normalized * size
+	var info: Dictionary = MapLayout.node_info(node.name)
+	var normalized: Vector2 = info.get("pos", _fallback_pos(index))
+	return _norm_to_px(normalized)
 
 
 func _fallback_pos(index: int) -> Vector2:
@@ -155,19 +168,22 @@ func _fallback_pos(index: int) -> Vector2:
 
 
 func _draw_parchment() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), UiTheme.COL_PARCHMENT)
+	var rect := _map_rect()
+	draw_rect(rect, UiTheme.COL_PARCHMENT)
 	for spot in STAIN_SPOTS:
-		draw_circle(spot * size, size.x * 0.09, Color(UiTheme.COL_INK, 0.03))
-		draw_circle(spot * size, size.x * 0.05, Color(UiTheme.COL_INK, 0.03))
+		draw_circle(_norm_to_px(spot), rect.size.x * 0.09, Color(UiTheme.COL_INK, 0.03))
+		draw_circle(_norm_to_px(spot), rect.size.x * 0.05, Color(UiTheme.COL_INK, 0.03))
 	_draw_vignette()
 
 
 func _draw_vignette() -> void:
-	var depth: float = min(size.x, size.y) * 0.10
+	var rect := _map_rect()
+	var depth: float = min(rect.size.x, rect.size.y) * 0.10
 	var shade := Color(0.20, 0.13, 0.06, 0.22)
 	var clear := Color(0.20, 0.13, 0.06, 0.0)
-	var w := size.x
-	var h := size.y
+	var top_left := rect.position
+	var w := rect.size.x
+	var h := rect.size.y
 	var strips := [
 		[Vector2(0, 0), Vector2(w, 0), Vector2(w, depth), Vector2(0, depth)],
 		[Vector2(0, h), Vector2(w, h), Vector2(w, h - depth), Vector2(0, h - depth)],
@@ -175,16 +191,22 @@ func _draw_vignette() -> void:
 		[Vector2(w, 0), Vector2(w, h), Vector2(w - depth, h), Vector2(w - depth, 0)],
 	]
 	for strip in strips:
-		var points := PackedVector2Array(strip)
+		var points := PackedVector2Array()
+		for corner in strip:
+			points.append(top_left + corner)
 		var colors := PackedColorArray([shade, shade, clear, clear])
 		draw_polygon(points, colors)
 
 
 func _draw_frame() -> void:
+	var rect := _map_rect()
 	var ink := Color(UiTheme.COL_INK, 0.75)
-	draw_rect(Rect2(Vector2(7, 7), size - Vector2(14, 14)), ink, false, 2.5)
+	draw_rect(Rect2(rect.position + Vector2(7, 7), rect.size - Vector2(14, 14)), ink, false, 2.5)
 	draw_rect(
-		Rect2(Vector2(13, 13), size - Vector2(26, 26)), Color(UiTheme.COL_INK, 0.4), false, 1.0
+		Rect2(rect.position + Vector2(13, 13), rect.size - Vector2(26, 26)),
+		Color(UiTheme.COL_INK, 0.4),
+		false,
+		1.0
 	)
 
 
@@ -200,7 +222,7 @@ func _draw_ridge() -> void:
 	var ink := Color(UiTheme.COL_INK, 0.5)
 	for k in range(10):
 		var normalized := Vector2(0.775 + 0.018 * sin(k * 2.1), 0.06 + k * 0.095)
-		var center := normalized * size
+		var center := _norm_to_px(normalized)
 		var span := 9.0 + 3.0 * sin(k * 1.3)
 		var peak := center + Vector2(0, -span * 0.9)
 		draw_line(center + Vector2(-span, 0), peak, ink, 1.6, true)
@@ -212,7 +234,7 @@ func _draw_forests() -> void:
 	var ink := Color(UiTheme.COL_INK, 0.30)
 	for cluster in FOREST_CLUSTERS:
 		for offset in TREE_OFFSETS:
-			var base: Vector2 = (cluster + offset) * size
+			var base: Vector2 = _norm_to_px(cluster + offset)
 			var h := 9.0
 			draw_line(base + Vector2(-4, 0), base + Vector2(0, -h), ink, 1.2, true)
 			draw_line(base + Vector2(0, -h), base + Vector2(4, 0), ink, 1.2, true)
@@ -223,12 +245,14 @@ func _draw_routes() -> void:
 	for i in range(economy.nodes.size()):
 		for j in range(i + 1, economy.nodes.size()):
 			var points := _route_points(i, j)
-			draw_polyline(points, Color(UiTheme.COL_INK, 0.14), 5.0, true)
+			# Светлый подслой держит читаемость пунктира на тёмной гравюре
+			draw_polyline(points, Color(UiTheme.COL_PARCHMENT, 0.45), 5.0, true)
 			for k in range(0, points.size() - 1, 2):
 				draw_line(points[k], points[k + 1], Color(UiTheme.COL_INK, 0.65), 1.6, true)
 
 
 func _draw_caravans() -> void:
+	var sprite := GenAssets.texture("map/caravan.png")
 	var route_load := {}
 	for caravan in economy.caravans:
 		var origin_index: int = economy.nodes.find(caravan.origin)
@@ -242,17 +266,23 @@ func _draw_caravans() -> void:
 		)
 		var stack: int = route_load.get(key, 0)
 		route_load[key] = stack + 1
-		pos += Vector2(0, -12.0 * stack)
+		pos += Vector2(0, -14.0 * stack)
 
 		var owner_agent = economy.agent_by_id(caravan.owner_id)
 		var is_player: bool = owner_agent != null and owner_agent.is_player
-		draw_circle(pos + Vector2(1, 2), 7.0, Color(0, 0, 0, 0.2))
-		draw_circle(pos, 6.5, UiTheme.agent_color(is_player))
-		draw_circle(pos, 3.8, UiTheme.GOOD_COLORS[caravan.good])
-		draw_arc(pos, 6.5, 0, TAU, 24, Color(UiTheme.COL_INK, 0.8), 1.2, true)
+		if sprite != null:
+			var heading_left: bool = (
+				_node_center(destination_index).x < _node_center(origin_index).x
+			)
+			_draw_caravan_sprite(sprite, pos, is_player, heading_left)
+		else:
+			draw_circle(pos + Vector2(1, 2), 7.0, Color(0, 0, 0, 0.2))
+			draw_circle(pos, 6.5, UiTheme.agent_color(is_player))
+			draw_circle(pos, 3.8, UiTheme.GOOD_COLORS[caravan.good])
+			draw_arc(pos, 6.5, 0, TAU, 24, Color(UiTheme.COL_INK, 0.8), 1.2, true)
 		draw_string(
 			UiTheme.font_bold(),
-			pos + Vector2(-40, -11),
+			pos + Vector2(-40, -20),
 			"%.0f" % caravan.qty,
 			HORIZONTAL_ALIGNMENT_CENTER,
 			80,
@@ -261,27 +291,58 @@ func _draw_caravans() -> void:
 		)
 
 
+func _draw_caravan_sprite(
+	sprite: Texture2D, pos: Vector2, is_player: bool, heading_left: bool
+) -> void:
+	var w := CARAVAN_WIDTH
+	var h := w * float(sprite.get_height()) / float(sprite.get_width())
+	var rect := Rect2(pos - Vector2(w * 0.5, h * 0.5), Vector2(w, h))
+	if heading_left:
+		# Отрицательная ширина зеркалит текстуру по горизонтали
+		rect = Rect2(Vector2(rect.position.x + w, rect.position.y), Vector2(-w, h))
+	draw_texture_rect(sprite, rect, false)
+	# Флажок цвета владельца над повозкой
+	var mast_base := pos + Vector2(0, -h * 0.5)
+	var mast_top := mast_base + Vector2(0, -9)
+	draw_line(mast_base, mast_top, Color(UiTheme.COL_INK, 0.85), 1.4, true)
+	var flag := PackedVector2Array([mast_top, mast_top + Vector2(8, 2.5), mast_top + Vector2(0, 5)])
+	draw_colored_polygon(flag, UiTheme.agent_color(is_player))
+
+
 func _draw_nodes() -> void:
 	for i in range(economy.nodes.size()):
 		var node = economy.nodes[i]
 		var center := _node_center(i)
-		var kind: String = NODE_KIND.get(node.name, "town")
+		var info: Dictionary = MapLayout.node_info(node.name)
+		var marker: Texture2D = null
+		var asset_key: String = info.get("key", "")
+		if asset_key != "":
+			marker = GenAssets.texture("map/marker_%s.png" % asset_key)
+		var radius := MARKER_SIZE * 0.5 if marker != null else NODE_RADIUS
 
-		draw_circle(center + Vector2(2, 3), NODE_RADIUS + 2, Color(0, 0, 0, 0.18))
+		if marker == null:
+			draw_circle(center + Vector2(2, 3), radius + 2, Color(0, 0, 0, 0.18))
 		if i == selected_index:
-			draw_circle(center, NODE_RADIUS + 7, Color(UiTheme.COL_GOLD, 0.20))
-			draw_arc(center, NODE_RADIUS + 5, 0, TAU, 40, UiTheme.COL_GOLD, 2.0, true)
+			draw_circle(center, radius + 7, Color(UiTheme.COL_GOLD, 0.20))
+			draw_arc(center, radius + 5, 0, TAU, 48, UiTheme.COL_GOLD, 2.0, true)
 		elif i == _hovered_index:
-			draw_arc(center, NODE_RADIUS + 5, 0, TAU, 40, Color(UiTheme.COL_GOLD, 0.6), 1.5, true)
+			draw_arc(center, radius + 5, 0, TAU, 48, Color(UiTheme.COL_GOLD, 0.6), 1.5, true)
 
-		draw_circle(center, NODE_RADIUS, UiTheme.COL_PARCHMENT_DARK)
-		draw_arc(center, NODE_RADIUS, 0, TAU, 40, UiTheme.COL_INK, 2.0, true)
-		_draw_node_glyph(kind, center)
-		_draw_node_caption(i, node, center)
+		if marker != null:
+			var half := Vector2(MARKER_SIZE, MARKER_SIZE) * 0.5
+			draw_texture_rect(
+				marker, Rect2(center - half, Vector2(MARKER_SIZE, MARKER_SIZE)), false
+			)
+		else:
+			draw_circle(center, radius, UiTheme.COL_PARCHMENT_DARK)
+			draw_arc(center, radius, 0, TAU, 40, UiTheme.COL_INK, 2.0, true)
+			_draw_node_glyph(info.get("kind", "town"), center)
+		_draw_node_caption(i, node, center, radius)
 
 
-func _draw_node_caption(index: int, node, center: Vector2) -> void:
-	var name_pos := center + Vector2(-90, NODE_RADIUS + 18)
+func _draw_node_caption(index: int, node, center: Vector2, radius: float) -> void:
+	var info: Dictionary = MapLayout.node_info(node.name)
+	var name_pos := center + Vector2(-90, radius + 18)
 	draw_string(
 		UiTheme.font_bold(),
 		name_pos + Vector2(1, 1),
@@ -300,21 +361,21 @@ func _draw_node_caption(index: int, node, center: Vector2) -> void:
 		16,
 		UiTheme.COL_INK
 	)
-	var subtitle: String = NODE_SUBTITLE.get(node.name, "")
+	var subtitle: String = info.get("subtitle", "")
 	if subtitle != "":
 		draw_string(
 			UiTheme.font_italic(),
-			center + Vector2(-90, NODE_RADIUS + 33),
+			center + Vector2(-90, radius + 33),
 			subtitle,
 			HORIZONTAL_ALIGNMENT_CENTER,
 			180,
 			12,
 			Color(UiTheme.COL_INK, 0.7)
 		)
-	_draw_enterprise_badges(index, center)
+	_draw_enterprise_badges(index, center, radius)
 
 
-func _draw_enterprise_badges(index: int, center: Vector2) -> void:
+func _draw_enterprise_badges(index: int, center: Vector2, radius: float) -> void:
 	var node = economy.nodes[index]
 	var badges: Array[Color] = []
 	for agent in economy.agents:
@@ -331,7 +392,7 @@ func _draw_enterprise_badges(index: int, center: Vector2) -> void:
 	var total := badges.size() * (badge_size + gap) - gap
 	if construction_count > 0:
 		total += badge_size + gap
-	var start := center + Vector2(-total * 0.5, NODE_RADIUS + 40)
+	var start := center + Vector2(-total * 0.5, radius + 40)
 	for k in range(badges.size()):
 		var rect := Rect2(
 			start + Vector2(k * (badge_size + gap), 0), Vector2(badge_size, badge_size)
@@ -384,7 +445,7 @@ func _draw_node_glyph(kind: String, center: Vector2) -> void:
 
 
 func _draw_compass() -> void:
-	var center := Vector2(size.x * 0.075, size.y * 0.16)
+	var center := _norm_to_px(Vector2(0.075, 0.16))
 	var ink := Color(UiTheme.COL_INK, 0.65)
 	draw_arc(center, 17, 0, TAU, 40, ink, 1.4, true)
 	draw_arc(center, 3, 0, TAU, 20, ink, 1.2, true)
@@ -410,16 +471,19 @@ func _draw_compass() -> void:
 
 
 func _draw_cartouche() -> void:
+	var rect := _map_rect()
 	var box_size := Vector2(252, 78)
-	var origin := Vector2(size.x - box_size.x - 22, size.y - box_size.y - 22)
-	draw_rect(Rect2(origin, box_size), Color(UiTheme.COL_PARCHMENT_DARK, 0.85))
-	draw_rect(Rect2(origin, box_size), Color(UiTheme.COL_INK, 0.8), false, 1.6)
-	draw_rect(
-		Rect2(origin + Vector2(4, 4), box_size - Vector2(8, 8)),
-		Color(UiTheme.COL_INK, 0.35),
-		false,
-		1.0
-	)
+	var origin := rect.position + rect.size - box_size - Vector2(22, 22)
+	# На гравюре-фоне картуш уже нарисован — кладём в него только текст
+	if GenAssets.texture("map/map_background.png") == null:
+		draw_rect(Rect2(origin, box_size), Color(UiTheme.COL_PARCHMENT_DARK, 0.85))
+		draw_rect(Rect2(origin, box_size), Color(UiTheme.COL_INK, 0.8), false, 1.6)
+		draw_rect(
+			Rect2(origin + Vector2(4, 4), box_size - Vector2(8, 8)),
+			Color(UiTheme.COL_INK, 0.35),
+			false,
+			1.0
+		)
 	draw_string(
 		UiTheme.font_bold(),
 		origin + Vector2(0, 24),
@@ -506,7 +570,7 @@ func _bezier(a: Vector2, control: Vector2, b: Vector2, t: float) -> Vector2:
 func _smooth_polyline(normalized_points: Array) -> PackedVector2Array:
 	var source: Array[Vector2] = []
 	for p in normalized_points:
-		source.append(p * size)
+		source.append(_norm_to_px(p))
 	var result := PackedVector2Array()
 	for i in range(source.size() - 1):
 		var p0 := source[max(i - 1, 0)]
