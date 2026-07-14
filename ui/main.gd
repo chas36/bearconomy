@@ -1,4 +1,4 @@
-# main.gd — сборка игрового экрана: планка, карта, вкладки конторы, события
+# main.gd — сборка игрового экрана: карта, город-сцена, планка, события
 # UI только читает симуляцию и шлёт команды через публичные API /sim.
 extends Control
 
@@ -6,6 +6,7 @@ const Gameplay := preload("res://sim/gameplay.gd")
 const OpenRouterNpc := preload("res://game/openrouter_npc.gd")
 const UiTheme := preload("res://ui/ui_theme.gd")
 const MapView := preload("res://ui/map_view.gd")
+const CityScreen := preload("res://ui/city_screen.gd")
 const TopBar := preload("res://ui/top_bar.gd")
 const CityPanel := preload("res://ui/city_panel.gd")
 const WorksPanel := preload("res://ui/works_panel.gd")
@@ -13,11 +14,8 @@ const ContractsPanel := preload("res://ui/contracts_panel.gd")
 const JournalPanel := preload("res://ui/journal_panel.gd")
 const EventDialog := preload("res://ui/event_dialog.gd")
 
-const SIDE_PANEL_WIDTH := 420.0
-const TAB_CITY := 0
-const TAB_WORKS := 1
-const TAB_CONTRACTS := 2
-const TAB_JOURNAL := 3
+const TOP_BAR_HEIGHT := 48.0
+const STATUS_BAR_HEIGHT := 30.0
 
 var gameplay := Gameplay.new()
 var current_speed := 0
@@ -26,13 +24,13 @@ var last_speed := 1
 var _tick_timer: Timer
 var _top_bar: TopBar
 var _map_view: MapView
+var _city_screen: CityScreen
 var _city_panel: CityPanel
 var _works_panel: WorksPanel
 var _contracts_panel: ContractsPanel
 var _journal_panel: JournalPanel
 var _event_dialog: EventDialog
-var _tab_buttons: Array[Button] = []
-var _tab_panels: Array[Control] = []
+var _panel_store: Control
 var _status_label: Label
 var _counts_label: Label
 var _last_money := 0.0
@@ -66,36 +64,32 @@ func _build_ui() -> void:
 	background.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(background)
 
-	var margin := MarginContainer.new()
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	for side in ["margin_left", "margin_top", "margin_right", "margin_bottom"]:
-		margin.add_theme_constant_override(side, 10)
-	add_child(margin)
+	_map_view = MapView.new()
+	_map_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_map_view.offset_top = TOP_BAR_HEIGHT
+	_map_view.offset_bottom = -STATUS_BAR_HEIGHT
+	_map_view.setup(gameplay.economy)
+	_map_view.node_clicked.connect(_on_map_node_clicked)
+	add_child(_map_view)
 
-	var page := VBoxContainer.new()
-	page.add_theme_constant_override("separation", 8)
-	margin.add_child(page)
+	_city_screen = CityScreen.new()
+	_city_screen.setup(gameplay.economy)
+	_city_screen.back_requested.connect(_on_city_back)
+	_city_screen.paper_requested.connect(_on_paper_requested)
+	_city_screen.hide()
+	add_child(_city_screen)
+
+	_build_panel_store()
 
 	_top_bar = TopBar.new()
+	_top_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	_top_bar.step_pressed.connect(_advance_tick)
 	_top_bar.speed_selected.connect(_set_speed)
 	_top_bar.save_pressed.connect(_on_save)
 	_top_bar.load_pressed.connect(_on_load)
-	page.add_child(_top_bar)
+	add_child(_top_bar)
 
-	var center := HBoxContainer.new()
-	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	center.add_theme_constant_override("separation", 8)
-	page.add_child(center)
-
-	_map_view = MapView.new()
-	_map_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_map_view.setup(gameplay.economy)
-	_map_view.node_clicked.connect(_on_map_node_clicked)
-	center.add_child(_map_view)
-
-	center.add_child(_build_side_panel())
-	page.add_child(_build_status_bar())
+	add_child(_build_status_bar())
 
 	_event_dialog = EventDialog.new()
 	_event_dialog.choice_made.connect(_on_event_choice)
@@ -103,14 +97,11 @@ func _build_ui() -> void:
 	add_child(_event_dialog)
 
 
-func _build_side_panel() -> Control:
-	var side := VBoxContainer.new()
-	side.custom_minimum_size.x = SIDE_PANEL_WIDTH
-	side.add_theme_constant_override("separation", 0)
-
-	var tabs := HBoxContainer.new()
-	tabs.add_theme_constant_override("separation", 2)
-	side.add_child(tabs)
+# v0-заглушка: панели живут скрытыми, пока не переедут в бумаги города
+func _build_panel_store() -> void:
+	_panel_store = Control.new()
+	_panel_store.visible = false
+	add_child(_panel_store)
 
 	_city_panel = CityPanel.new()
 	_works_panel = WorksPanel.new()
@@ -118,47 +109,17 @@ func _build_side_panel() -> Control:
 	_journal_panel = JournalPanel.new()
 	for panel in [_city_panel, _works_panel, _contracts_panel, _journal_panel]:
 		panel.setup(gameplay)
-	_city_panel.node_selected.connect(_on_city_node_selected)
+		_panel_store.add_child(panel)
+	_city_panel.node_selected.connect(_select_node)
 	for panel in [_city_panel, _works_panel, _contracts_panel]:
 		panel.action_performed.connect(_on_panel_action)
-	_tab_panels.assign([_city_panel, _works_panel, _contracts_panel, _journal_panel])
-
-	var group := ButtonGroup.new()
-	var captions := ["Город", "Заводы", "Заказы", "Летопись"]
-	for i in range(captions.size()):
-		var button := Button.new()
-		button.text = captions[i]
-		button.theme_type_variation = "TabButton"
-		button.toggle_mode = true
-		button.button_group = group
-		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.pressed.connect(_on_tab_selected.bind(i))
-		tabs.add_child(button)
-		_tab_buttons.append(button)
-
-	var holder := PanelContainer.new()
-	holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	side.add_child(holder)
-
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	holder.add_child(scroll)
-
-	var stack := VBoxContainer.new()
-	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(stack)
-	for panel in _tab_panels:
-		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		stack.add_child(panel)
-
-	_tab_buttons[TAB_CITY].button_pressed = true
-	_on_tab_selected(TAB_CITY)
-	return side
 
 
 func _build_status_bar() -> Control:
 	var bar := PanelContainer.new()
 	bar.theme_type_variation = "StatusPanel"
+	bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	bar.grow_vertical = Control.GROW_DIRECTION_BEGIN
 
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
@@ -182,11 +143,11 @@ func _refresh_all() -> void:
 	_last_money = economy.player.money
 
 	_map_view.refresh()
-	for panel in _tab_panels:
+	if _city_screen.visible:
+		_city_screen.refresh()
+	for panel in [_city_panel, _works_panel, _contracts_panel, _journal_panel]:
 		panel.refresh()
 
-	var open_count: int = _contracts_panel.open_count()
-	_tab_buttons[TAB_CONTRACTS].text = ("Заказы (%d)" % open_count if open_count > 0 else "Заказы")
 	_counts_label.text = (
 		"Обозов в пути: %d · Строек: %d"
 		% [economy.caravans.size(), economy.construction_queue.size()]
@@ -233,17 +194,17 @@ func _select_node(index: int) -> void:
 
 func _on_map_node_clicked(index: int) -> void:
 	_select_node(index)
-	_tab_buttons[TAB_CITY].button_pressed = true
-	_on_tab_selected(TAB_CITY)
+	_map_view.hide()
+	_city_screen.show_city(index)
 
 
-func _on_city_node_selected(index: int) -> void:
-	_select_node(index)
+func _on_city_back() -> void:
+	_city_screen.hide()
+	_map_view.show()
 
 
-func _on_tab_selected(index: int) -> void:
-	for i in range(_tab_panels.size()):
-		_tab_panels[i].visible = i == index
+func _on_paper_requested(_paper_id: String) -> void:
+	pass  # v0-заглушка: бумаги города подключаются следующей задачей
 
 
 func _on_panel_action(message: String) -> void:
@@ -285,6 +246,8 @@ func _on_load() -> void:
 		_on_panel_action("Загрузка не удалась.")
 		return
 	_map_view.setup(gameplay.economy)
+	_city_screen.setup(gameplay.economy)
+	_on_city_back()
 	_select_node(min(_city_panel.node_index, gameplay.economy.nodes.size() - 1))
 	_status_label.text = "Игра загружена."
 	_journal_panel.add_line("Игра загружена.")
