@@ -5,6 +5,7 @@ const Goods := preload("res://sim/goods.gd")
 const Labor := preload("res://sim/labor.gd")
 const Gameplay := preload("res://sim/gameplay.gd")
 const TradeNode := preload("res://sim/trade_node.gd")
+const Persona := preload("res://ui/persona.gd")
 
 var failed := false
 
@@ -21,6 +22,7 @@ func _init() -> void:
 	_check_contract_failure_penalty()
 	_check_ai_competitor_contract()
 	_check_ai_competitor_construction()
+	_check_persona_determinism()
 
 	if failed:
 		quit(1)
@@ -357,6 +359,30 @@ func _contract_fixture(
 		"taken_by": "",
 		"baseline_sold": 0.0,
 	}
+
+
+# Persona — UI-слой, но чистые данные: лица должны быть детерминированными
+func _check_persona_determinism() -> void:
+	var state_contract := {"id": 7, "good": 2, "relations_bonus": 3.0}
+	var p1: Dictionary = Persona.for_contract(state_contract)
+	var p2: Dictionary = Persona.for_contract(state_contract)
+	_expect(_states_equal(p1, p2), "persona: одинаковый контракт должен давать одно лицо")
+	_expect(p1["name"] != "", "persona: имя не должно быть пустым")
+	_expect(p1["role"] == "podyachy", "persona: казённый заказ должен выдавать подьячий")
+
+	var private_contract := {"id": 8, "good": 2, "relations_bonus": 0.0}
+	_expect(
+		Persona.for_contract(private_contract)["role"] == "kupets",
+		"persona: частный заказ должен выдавать купец"
+	)
+
+	var e1: Dictionary = Persona.for_event("state_inspection", "podyachy")
+	var e2: Dictionary = Persona.for_event("state_inspection", "podyachy")
+	_expect(_states_equal(e1, e2), "persona: событие должно давать стабильное лицо")
+	_expect(
+		String(e1["portrait"]).begins_with("portraits/podyachy_"),
+		"persona: портрет должен соответствовать роли"
+	)
 
 
 func _expect(condition: bool, message: String) -> void:
