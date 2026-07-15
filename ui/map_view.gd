@@ -17,6 +17,8 @@ const HIT_RADIUS := 34.0
 const MARKER_SIZE := 76.0
 const CARAVAN_WIDTH := 48.0
 const MAP_ASPECT := 16.0 / 9.0
+# Центр пустого картуша, нарисованного на map_background.png (0..1 кадра)
+const CARTOUCHE_CENTER := Vector2(0.834, 0.833)
 
 const RIVER_VOLGA := [
 	Vector2(0.40, 0.02),
@@ -343,15 +345,17 @@ func _draw_nodes() -> void:
 func _draw_node_caption(index: int, node, center: Vector2, radius: float) -> void:
 	var info: Dictionary = MapLayout.node_info(node.name)
 	var name_pos := center + Vector2(-90, radius + 18)
-	draw_string(
-		UiTheme.font_bold(),
-		name_pos + Vector2(1, 1),
-		node.name,
-		HORIZONTAL_ALIGNMENT_CENTER,
-		180,
-		16,
-		Color(UiTheme.COL_PARCHMENT, 0.9)
-	)
+	# Светлый ореол вокруг названия — иначе тушь тонет в тёмной гравюре
+	for offset in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+		draw_string(
+			UiTheme.font_bold(),
+			name_pos + offset,
+			node.name,
+			HORIZONTAL_ALIGNMENT_CENTER,
+			180,
+			16,
+			Color(UiTheme.COL_PARCHMENT, 0.85)
+		)
 	draw_string(
 		UiTheme.font_bold(),
 		name_pos,
@@ -474,8 +478,10 @@ func _draw_cartouche() -> void:
 	var rect := _map_rect()
 	var box_size := Vector2(252, 78)
 	var origin := rect.position + rect.size - box_size - Vector2(22, 22)
-	# На гравюре-фоне картуш уже нарисован — кладём в него только текст
-	if GenAssets.texture("map/map_background.png") == null:
+	# На гравюре-фоне картуш уже нарисован — кладём текст в его центр
+	if GenAssets.texture("map/map_background.png") != null:
+		origin = _norm_to_px(CARTOUCHE_CENTER) - box_size * 0.5
+	else:
 		draw_rect(Rect2(origin, box_size), Color(UiTheme.COL_PARCHMENT_DARK, 0.85))
 		draw_rect(Rect2(origin, box_size), Color(UiTheme.COL_INK, 0.8), false, 1.6)
 		draw_rect(
