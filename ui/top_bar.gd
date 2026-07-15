@@ -5,6 +5,7 @@ signal step_pressed
 signal speed_selected(ticks_per_second: int)
 signal save_pressed
 signal load_pressed
+signal journal_pressed
 
 const UiTheme := preload("res://ui/ui_theme.gd")
 const GameText := preload("res://ui/game_text.gd")
@@ -117,6 +118,12 @@ func _build_time_controls(row: HBoxContainer) -> void:
 	step_button.tooltip_text = "Прожить одну неделю (один тик)"
 	step_button.pressed.connect(func() -> void: step_pressed.emit())
 	row.add_child(step_button)
+
+	var journal_button := Button.new()
+	journal_button.text = "Летопись"
+	journal_button.tooltip_text = "Обозы в пути и записи приказчика"
+	journal_button.pressed.connect(func() -> void: journal_pressed.emit())
+	row.add_child(journal_button)
 
 	var save_button := Button.new()
 	save_button.text = "Сохранить"

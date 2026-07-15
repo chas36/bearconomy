@@ -10,7 +10,8 @@ repos:
       - id: check-yaml
       - id: check-merge-conflict
       - id: check-added-large-files
-        args: [--maxkb=1024]
+        # 4 МБ: карта и панорамы города — крупные PNG в ui/assets/gen
+        args: [--maxkb=4096]
 
   - repo: https://github.com/Scony/godot-gdscript-toolkit
     rev: 4.5.0
