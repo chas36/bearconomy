@@ -20,6 +20,7 @@ func _init() -> void:
 		{"name": "city", "action": _open_city.bind("Невьянск")},
 		{"name": "city_moscow", "action": _open_city.bind("Москва")},
 		{"name": "city_market", "action": _open_paper.bind("Невьянск", "market")},
+		{"name": "event", "action": _open_event},
 	]
 
 
@@ -55,3 +56,13 @@ func _open_city(node_name: String) -> void:
 func _open_paper(node_name: String, paper_id: String) -> void:
 	_open_city(node_name)
 	_main._on_paper_requested(paper_id)
+
+
+func _open_event() -> void:
+	_main._paper_panel.close()
+	_main._on_city_back()
+	var gameplay = _main.gameplay
+	while not gameplay.has_pending_event() and gameplay.economy.tick_count < 20:
+		gameplay.advance_tick()
+	_main._refresh_all()
+	_main._show_pending_event()

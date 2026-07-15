@@ -5,6 +5,8 @@ signal choice_made(index: int)
 signal llm_requested
 
 const UiTheme := preload("res://ui/ui_theme.gd")
+const GenAssets := preload("res://ui/gen_assets.gd")
+const Persona := preload("res://ui/persona.gd")
 
 var _title_label: Label
 var _location_label: Label
@@ -12,6 +14,8 @@ var _body_label: Label
 var _stakes_label: Label
 var _choice_box: VBoxContainer
 var _llm_button: Button
+var _portrait: TextureRect
+var _speaker_label: Label
 
 
 func _init() -> void:
@@ -25,6 +29,13 @@ func show_event(event: Dictionary) -> void:
 	_title_label.text = event.get("title", "Событие")
 	_location_label.text = event.get("location", "")
 	_location_label.visible = _location_label.text != ""
+
+	var persona: Dictionary = Persona.for_event(
+		event.get("id", ""), event.get("speaker_role", "prikazchik")
+	)
+	_portrait.texture = GenAssets.texture(persona["portrait"])
+	_portrait.visible = _portrait.texture != null
+	_speaker_label.text = "%s %s" % [persona["title"], persona["name"]]
 	_body_label.text = event.get("generated_body", event.get("body", ""))
 	_stakes_label.text = event.get("stakes", "")
 	_stakes_label.visible = _stakes_label.text != ""
@@ -84,6 +95,8 @@ func _build() -> void:
 	head.add_theme_constant_override("separation", 12)
 	body.add_child(head)
 
+	head.add_child(_build_speaker_column())
+
 	var head_text := VBoxContainer.new()
 	head_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(head_text)
@@ -127,6 +140,25 @@ func _build() -> void:
 	_llm_button.tooltip_text = "Попросить LLM переписать описание живым языком (числа не меняются)"
 	_llm_button.pressed.connect(func() -> void: llm_requested.emit())
 	footer.add_child(_llm_button)
+
+
+# Колонка отправителя: портрет-парсуна и подпись «роль имя»
+func _build_speaker_column() -> Control:
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 4)
+
+	_portrait = TextureRect.new()
+	_portrait.custom_minimum_size = Vector2(96, 96)
+	_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	column.add_child(_portrait)
+
+	_speaker_label = Label.new()
+	_speaker_label.theme_type_variation = "InkDimLabel"
+	_speaker_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_speaker_label.custom_minimum_size.x = 96
+	column.add_child(_speaker_label)
+	return column
 
 
 func _on_choice(index: int) -> void:

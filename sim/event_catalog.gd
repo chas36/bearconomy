@@ -26,6 +26,7 @@ static func _state_inspection() -> Dictionary:
 		"body": "В Невьянск приехал приказчик. Дар сгладит вопросы к посессионным.",
 		"trigger": {"tick": 5},
 		"tags": ["state", "inspection", "labor"],
+		"speaker_role": "podyachy",
 		"participants": ["Казённый приказчик", "Заводская контора"],
 		"location": "Невьянск",
 		"stakes": "Связи с казной влияют на приписных работников и будущие разрешения.",
@@ -63,6 +64,7 @@ static func _worker_demand() -> Dictionary:
 		"body": "Наёмные на кузнице услышали, что в Верхотурье платят лучше.",
 		"trigger": {"tick": 9},
 		"tags": ["labor", "wage", "enterprise"],
+		"speaker_role": "master",
 		"participants": ["Наёмные кузнецы", "Приказчик кузницы"],
 		"location": "Невьянск",
 		"stakes": "Ставка наёмным определяет удержание людей и скорость выпуска железа.",
@@ -102,6 +104,7 @@ static func _fair_shortage() -> Dictionary:
 		"conditions":
 		{"node_stock_below": {"node": "Макарьево", "good": Goods.Good.ZERNO, "value": 160.0}},
 		"tags": ["market", "grain", "logistics"],
+		"speaker_role": "kupets",
 		"participants": ["Макарьевские купцы", "Заводской закупщик"],
 		"location": "Макарьево",
 		"stakes": "Зерно кормит работников, а доставка на Урал занимает несколько тиков.",
