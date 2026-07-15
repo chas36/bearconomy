@@ -6,6 +6,8 @@ signal action_performed(message: String)
 const Goods := preload("res://sim/goods.gd")
 const UiTheme := preload("res://ui/ui_theme.gd")
 const GameText := preload("res://ui/game_text.gd")
+const GenAssets := preload("res://ui/gen_assets.gd")
+const Persona := preload("res://ui/persona.gd")
 
 var gameplay
 
@@ -151,6 +153,8 @@ func _card_base(contract: Dictionary) -> PanelContainer:
 	body.add_theme_constant_override("separation", 4)
 	card.add_child(body)
 
+	body.add_child(_issuer_row(contract))
+
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 6)
 	body.add_child(head)
@@ -176,6 +180,29 @@ func _card_base(contract: Dictionary) -> PanelContainer:
 	head.add_child(reward)
 
 	return card
+
+
+# «Купец Савва Коробов просит:» — выдавшее лицо, детерминировано из id
+func _issuer_row(contract: Dictionary) -> Control:
+	var persona: Dictionary = Persona.for_contract(contract)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+
+	var portrait_texture := GenAssets.texture(persona["portrait"])
+	if portrait_texture != null:
+		var portrait := TextureRect.new()
+		portrait.texture = portrait_texture
+		portrait.custom_minimum_size = Vector2(40, 40)
+		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		row.add_child(portrait)
+
+	var issuer := Label.new()
+	issuer.text = "%s %s просит:" % [persona["title"], persona["name"]]
+	issuer.theme_type_variation = "SmallDimLabel"
+	issuer.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(issuer)
+	return row
 
 
 func _empty_label(text: String) -> Label:

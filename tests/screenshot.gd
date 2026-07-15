@@ -21,6 +21,7 @@ func _init() -> void:
 		{"name": "city_moscow", "action": _open_city.bind("Москва")},
 		{"name": "city_market", "action": _open_paper.bind("Невьянск", "market")},
 		{"name": "event", "action": _open_event},
+		{"name": "city_contracts", "action": _open_contracts},
 	]
 
 
@@ -66,3 +67,15 @@ func _open_event() -> void:
 		gameplay.advance_tick()
 	_main._refresh_all()
 	_main._show_pending_event()
+
+
+func _open_contracts() -> void:
+	var gameplay = _main.gameplay
+	while gameplay.open_contracts().is_empty() and gameplay.economy.tick_count < 40:
+		if gameplay.has_pending_event():
+			gameplay.choose_event(0)
+		else:
+			gameplay.advance_tick()
+	_main._event_dialog.hide()
+	_main._refresh_all()
+	_open_paper("Москва", "contracts")
