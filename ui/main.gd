@@ -98,6 +98,9 @@ func _build_ui() -> void:
 	_top_bar.speed_selected.connect(_set_speed)
 	_top_bar.save_pressed.connect(_on_save)
 	_top_bar.load_pressed.connect(_on_load)
+	_top_bar.journal_pressed.connect(
+		func() -> void: _paper_panel.open("Летопись дома", _journal_panel)
+	)
 	add_child(_top_bar)
 
 	add_child(_build_status_bar())
